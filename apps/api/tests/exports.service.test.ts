@@ -3,6 +3,13 @@ import { ObjectId } from 'mongodb';
 import { ExportService } from '../src/modules/exports/exports.service';
 import type { ExportRepository } from '../src/modules/exports/exports.repository';
 
+vi.mock('../src/storage/mongo-file-storage', () => ({
+  fileStorage: {
+    put: vi.fn().mockResolvedValue(undefined),
+    get: vi.fn().mockResolvedValue(null),
+  },
+}));
+
 function createMockRepository(): vi.Mocked<ExportRepository> {
   return {
     findById: vi.fn(),

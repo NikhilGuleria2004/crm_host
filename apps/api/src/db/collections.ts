@@ -33,4 +33,5 @@ export const collections = {
   organizationMemberships: () => getCollection<import('../types').OrganizationMembershipDocument>('organization_memberships'),
   rolePermissions: () => getCollection<import('../types').RolePermissionDocument>('role_permissions'),
   rateLimits: () => getCollection<{ _id: string; count: number; resetAt: number }>('rate_limits'),
+  files: () => getCollection<{ _id: string; content: Buffer; contentType: string; updatedAt: Date }>('files'),
 };

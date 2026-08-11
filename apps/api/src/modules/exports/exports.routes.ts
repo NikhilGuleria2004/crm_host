@@ -11,6 +11,7 @@ export function createExportsRoutes() {
 
   app.get('/', controller.list);
   app.get('/:id', controller.getById);
+  app.get('/:id/download', controller.download);
   app.post('/', controller.create);
 
   return app;

@@ -3,6 +3,13 @@ import { ObjectId } from 'mongodb';
 import { Hono } from 'hono';
 import { createExportsRoutes } from '../src/modules/exports/exports.routes';
 
+vi.mock('../src/storage/mongo-file-storage', () => ({
+  fileStorage: {
+    put: vi.fn().mockResolvedValue(undefined),
+    get: vi.fn().mockResolvedValue(null),
+  },
+}));
+
 function createMockCollection() {
   return {
     findOne: vi.fn(),

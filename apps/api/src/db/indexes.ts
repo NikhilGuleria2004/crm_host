@@ -166,5 +166,8 @@ export async function bootstrapIndexes(): Promise<void> {
   const rateLimits = db.collection('rate_limits');
   await rateLimits.createIndex({ resetAt: 1 }, { expireAfterSeconds: 0 });
 
+  const files = db.collection('files');
+  await files.createIndex({ updatedAt: 1 }, { expireAfterSeconds: 0 });
+
   logger.info('Indexes bootstrapped successfully');
 }

@@ -408,6 +408,69 @@ export async function connectDatabase(): Promise<Db> {
 
 ---
 
+## Phase 8 — Replace In-Memory Export Storage
+
+**Status:** Complete  
+**Commit:** (pending)
+
+### Audit Results
+
+**Current implementation:** `apps/api/src/modules/exports/exports.service.ts` uses `globalThis.__exportFileStore` to persist export files in memory.
+
+**Problems identified:**
+1. **Not persistent** — Files are lost when the Function instance is recycled (cold start, scale-out, deployment)
+2. **Not shared** — Each Function instance has its own in-memory store
+3. **No download endpoint** — `downloadUrl` was returned in responses but no route handled it
+
+### Changes
+
+1. **`apps/api/src/storage/file-storage.ts`** — Created `FileStorage` interface with `put`, `get`, `delete` methods. Keeps the application independent of the storage provider.
+
+2. **`apps/api/src/storage/mongo-file-storage.ts`** — Created MongoDB-backed `FileStorage` implementation:
+   - Stores files in `files` collection as `{ _id, content: Buffer, contentType, updatedAt }`
+   - Uses `updateOne` with upsert for writes
+   - TTL index on `updatedAt` for automatic cleanup
+
+3. **`apps/api/src/modules/exports/exports.service.ts`** — Migrated from `globalThis.__exportFileStore` to `fileStorage`:
+   - `processExport()` now calls `await fileStorage.put(fileKey, Buffer.from(csv), 'text/csv')`
+   - Added `getFile(key)` method to retrieve files
+   - Removed `storeFile()` and all `globalThis` usage
+
+4. **`apps/api/src/modules/exports/exports.routes.ts`** — Added `GET /:id/download` route.
+
+5. **`apps/api/src/modules/exports/exports.controller.ts`** — Added `download()` controller:
+   - Checks organization context (isolation)
+   - Returns `404` if job not found or file missing
+   - Sets `Content-Type: text/csv` and `Content-Disposition: attachment` headers
+
+6. **`apps/api/src/db/collections.ts`** — Added `files` collection accessor.
+
+7. **`apps/api/src/db/indexes.ts`** — Added TTL index on `files.updatedAt`.
+
+8. **Test fixes:**
+   - `tests/exports.service.test.ts` — Mocked `fileStorage` module
+   - `tests/exports.routes.test.ts` — Mocked `fileStorage` module
+
+### Verification
+
+| Check | Result |
+|-------|--------|
+| `pnpm typecheck` | Pass |
+| `pnpm lint` | Pass |
+| `pnpm test` | 456 passed (48 test files) |
+| `pnpm build` | Pass |
+| File persistence | Pass — MongoDB-backed, survives Function instance recycling |
+| Organization isolation | Pass — download checks `organizationId` scoping |
+| Unauthorized access | Pass — returns `404` for jobs outside organization |
+| Download headers | Pass — `Content-Type: text/csv`, `Content-Disposition: attachment` |
+
+### Known Limitations
+
+- MongoDB is used as the file store. For very large files or high-volume exports, Vercel Blob or S3/R2 would be more efficient. The `FileStorage` interface makes this swap trivial.
+- TTL index on `files.updatedAt` means files expire after a period of inactivity. Adjust `expireAfterSeconds` if longer retention is needed.
+
+---
+
 ## Next Phase
 
-**Phase 8:** Replace In-Memory Export Storage
+**Phase 9:** Replace Mock Import Implementation

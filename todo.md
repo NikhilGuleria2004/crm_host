@@ -64,13 +64,13 @@
 - [x] Verify rate limits effective across multiple simultaneous function instances
 
 ## Phase 8 — Replace In-Memory Export Storage
-- [ ] Audit `apps/api/src/modules/exports/exports.service.ts` (`globalThis.__exportFileStore`)
-- [ ] Choose storage: Vercel Blob (preferred) or S3/R2
-- [ ] Create storage adapter `apps/api/src/storage/blob.ts`
-- [ ] Migrate export persistence to Blob
-- [ ] Verify file survives new function instance
-- [ ] Verify unauthorized users cannot download
-- [ ] Verify organization isolation and correct download headers
+- [x] Audit `apps/api/src/modules/exports/exports.service.ts` (`globalThis.__exportFileStore`)
+- [x] Choose storage: Vercel Blob (preferred) or S3/R2
+- [x] Create storage adapter `apps/api/src/storage/blob.ts`
+- [x] Migrate export persistence to Blob
+- [x] Verify file survives new function instance
+- [x] Verify unauthorized users cannot download
+- [x] Verify organization isolation and correct download headers
 
 ## Phase 9 — Replace Mock Import Implementation
 - [ ] Audit `apps/api/src/modules/imports/imports.service.ts` for mock/placeholder CSV data

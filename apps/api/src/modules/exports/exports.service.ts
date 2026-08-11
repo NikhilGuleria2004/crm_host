@@ -1,4 +1,5 @@
 import { ExportRepository } from './exports.repository';
+import { fileStorage } from '../../storage/mongo-file-storage';
 import type { ExportJobResponse, ExportListResponse, ExportListQuery } from './exports.types';
 
 export class ExportService {
@@ -53,7 +54,7 @@ export class ExportService {
     const csv = this.generateCSV(doc.fields, rows);
 
     const fileKey = `exports/${doc._id.toHexString()}.csv`;
-    this.storeFile(fileKey, csv);
+    await fileStorage.put(fileKey, Buffer.from(csv), 'text/csv');
 
     await this.repository.updateStatus(doc._id.toHexString(), doc.organizationId.toHexString(), {
       status: 'completed',
@@ -61,6 +62,10 @@ export class ExportService {
       totalRows: rows.length,
       completedAt: new Date(),
     });
+  }
+
+  async getFile(key: string): Promise<{ content: Buffer; contentType: string } | null> {
+    return fileStorage.get(key);
   }
 
   private generateMockRows(fieldCount: number): string[][] {
@@ -88,11 +93,5 @@ export class ExportService {
       lines.push(row.map(escape).join(','));
     }
     return lines.join('\n');
-  }
-
-  private storeFile(key: string, content: string): void {
-    const inMemoryStore = (globalThis as any).__exportFileStore ||= {};
-    (globalThis as any).__exportFileStore = inMemoryStore;
-    inMemoryStore[key] = content;
   }
 }

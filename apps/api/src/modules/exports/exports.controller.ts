@@ -53,6 +53,24 @@ export function createExportsController(service: ExportService) {
       return c.json({ data: job });
     },
 
+    async download(c: any) {
+      const organizationId = c.get('organizationId');
+      const id = c.req.param('id');
+      const job = await service.getById(id, organizationId);
+      if (!job || !job.fileKey) {
+        return c.json({ error: { code: 'RESOURCE_NOT_FOUND', message: 'Export file not found' } }, 404);
+      }
+
+      const file = await service.getFile(job.fileKey);
+      if (!file) {
+        return c.json({ error: { code: 'RESOURCE_NOT_FOUND', message: 'Export file not found' } }, 404);
+      }
+
+      c.header('Content-Type', file.contentType || 'text/csv');
+      c.header('Content-Disposition', `attachment; filename="${job.entity}-${id}.csv"`);
+      return c.body(file.content);
+    },
+
     async create(c: any) {
       try {
         const organizationId = c.get('organizationId');
