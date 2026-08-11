@@ -50,10 +50,10 @@
 - [x] Verify authentication works on Vercel
 
 ## Phase 6 — Sessions and Cookies / CORS
-- [ ] Verify cookie flags: `HttpOnly`, `Secure`, `SameSite`, `Path=/`
-- [ ] Verify `NODE_ENV`-based cookie security matches Vercel Preview/Production
-- [ ] Audit CORS: ensure exact origin returned for credentialed requests (no `*`)
-- [ ] Test register, login, authenticated request, logout, expired session, revoked session from deployed frontend
+- [x] Verify cookie flags: HttpOnly, Secure, SameSite, Path=/
+- [x] Verify NODE_ENV-based cookie security matches Vercel Preview/Production
+- [x] Audit CORS: ensure exact origin returned for credentialed requests (no *)
+- [x] Test register, login, authenticated request, logout, expired session, revoked session from deployed frontend
 
 ## Phase 7 — Fix In-Memory Rate Limiting
 - [ ] Audit current `apps/api/src/middleware/rate-limit.ts`

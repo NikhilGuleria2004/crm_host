@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { requestId, securityHeaders, requestLogger } from './middleware';
+import { requestId, securityHeaders, requestLogger, cors } from './middleware';
 import { authenticate } from './middleware';
 import { organizationContext } from './middleware';
 import { rateLimiter } from './middleware';
@@ -37,6 +37,7 @@ const app = new Hono();
 app.use('*', requestId());
 app.use('*', requestLogger());
 app.use('*', securityHeaders());
+app.use('*', cors());
 
 app.get('/health', async (c) => {
   const dbHealth = await checkDatabaseHealth();

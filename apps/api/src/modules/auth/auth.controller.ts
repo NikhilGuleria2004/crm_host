@@ -3,6 +3,7 @@ import { AuthService } from './auth.service';
 import { registerSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema, changePasswordSchema } from './auth.schema';
 import type { RegisterInput, LoginInput, ForgotPasswordInput, ResetPasswordInput, ChangePasswordInput } from './auth.types';
 import { SESSION } from '@crm/shared';
+import { env } from '../../config/env';
 import { auditLog } from '../../middleware/audit';
 
 const toRegisterInput = (body: unknown): RegisterInput => {
@@ -35,25 +36,24 @@ function serializeCookie(name: string, value: string, options: Record<string, un
   return cookie;
 }
 
+function getCookieOptions() {
+  const isProduction = env.NODE_ENV === 'production';
+  return {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? 'none' : 'lax',
+    path: '/',
+    maxAge: 60 * 60 * 24 * 30,
+  };
+}
+
 function setSessionCookie(c: any, sessionId: string) {
-  const cookie = serializeCookie(SESSION.COOKIE_NAME, sessionId, {
-    httpOnly: SESSION.COOKIE_OPTIONS.httpOnly,
-    secure: SESSION.COOKIE_OPTIONS.secure,
-    sameSite: SESSION.COOKIE_OPTIONS.sameSite,
-    path: SESSION.COOKIE_OPTIONS.path,
-    maxAge: SESSION.COOKIE_OPTIONS.maxAge,
-  });
+  const cookie = serializeCookie(SESSION.COOKIE_NAME, sessionId, getCookieOptions());
   c.res.headers.set('Set-Cookie', cookie);
 }
 
 function clearSessionCookie(c: any) {
-  const cookie = serializeCookie(SESSION.COOKIE_NAME, '', {
-    httpOnly: SESSION.COOKIE_OPTIONS.httpOnly,
-    secure: SESSION.COOKIE_OPTIONS.secure,
-    sameSite: SESSION.COOKIE_OPTIONS.sameSite,
-    path: SESSION.COOKIE_OPTIONS.path,
-    maxAge: 0,
-  });
+  const cookie = serializeCookie(SESSION.COOKIE_NAME, '', { ...getCookieOptions(), maxAge: 0 });
   c.res.headers.set('Set-Cookie', cookie);
 }
 

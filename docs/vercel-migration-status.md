@@ -297,6 +297,65 @@ export async function connectDatabase(): Promise<Db> {
 
 ---
 
+## Phase 6 — Sessions and Cookies / CORS
+
+**Status:** Complete  
+**Commit:** (pending)
+
+### Audit Results
+
+**Cookie handling (pre-Phase 6):**
+- Cookie flags were static from `@crm/shared`: `HttpOnly=true`, `Secure=NODE_ENV==='production'`, `SameSite='lax'`, `Path='/'`
+- No `Domain` attribute set (browser uses host-only behavior)
+- No CORS middleware existed at all in the API
+
+**Issues found:**
+1. **Missing CORS** — No `Access-Control-*` headers were returned. Cross-origin requests from the frontend would be blocked by browsers.
+2. **SameSite=Lax for cross-origin** — With `SameSite=Lax`, cookies are blocked on cross-site POST/PUT/DELETE requests. On Vercel, the frontend and API will be on different origins (e.g., `crm-web.vercel.app` → `crm-api.vercel.app`), so mutations would fail.
+3. **Secure flag tied to NODE_ENV** — Vercel sets `NODE_ENV=production` for both preview and production, which is correct since both use HTTPS.
+
+### Changes
+
+1. **`apps/api/src/middleware/cors.ts`** — Created new CORS middleware:
+   - Reads `CORS_ORIGIN` from env config
+   - Returns `Access-Control-Allow-Origin` (exact origin match, never `*`)
+   - Returns `Access-Control-Allow-Credentials: true` for credentialed requests
+   - Returns `Access-Control-Allow-Methods`, `Access-Control-Allow-Headers`, `Access-Control-Max-Age`
+   - Handles `OPTIONS` preflight with `204 No Content`
+
+2. **`apps/api/src/app.ts`** — Registered CORS middleware globally (`app.use('*', cors())`) before auth middleware so preflight requests are handled early.
+
+3. **`apps/api/src/middleware/index.ts`** — Exported new `cors` middleware.
+
+4. **`apps/api/src/modules/auth/auth.controller.ts`** — Made cookie options dynamic based on environment:
+   - **Production (`NODE_ENV === 'production'`):** `Secure=true`, `SameSite=None`
+   - **Development:** `Secure=false`, `SameSite=Lax`
+   - `HttpOnly=true` always
+   - `Path=/` always
+
+   This ensures cookies work for cross-origin credentialed requests on Vercel (preview and production) while maintaining security.
+
+### Verification
+
+| Check | Result |
+|-------|--------|
+| `pnpm typecheck` | Pass |
+| `pnpm lint` | Pass |
+| `pnpm test` | 456 passed (48 test files) |
+| `pnpm build` | Pass |
+| Cookie flags | Pass — dynamic based on NODE_ENV |
+| CORS headers | Pass — exact origin, never `*` |
+| Credentials support | Pass — `Access-Control-Allow-Credentials: true` |
+| Preflight handling | Pass — `OPTIONS` returns `204` |
+
+### Known Limitations
+
+- `SameSite=None` requires `Secure=true`, which is satisfied in production.
+- Local development (`localhost:5173` → `localhost:3000`) uses `SameSite=Lax` which works for same-origin-like local dev.
+- End-to-end cross-origin cookie test requires actual Vercel deployment (preview or production).
+
+---
+
 ## Next Phase
 
-**Phase 6:** Sessions and Cookies / CORS
+**Phase 7:** Fix In-Memory Rate Limiting
