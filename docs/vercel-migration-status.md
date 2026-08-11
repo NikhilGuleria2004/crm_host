@@ -300,7 +300,7 @@ export async function connectDatabase(): Promise<Db> {
 ## Phase 6 — Sessions and Cookies / CORS
 
 **Status:** Complete  
-**Commit:** (pending)
+**Commit:** `d8f6894`
 
 ### Audit Results
 
