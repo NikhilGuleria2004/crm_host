@@ -1,20 +1,40 @@
-# HOSTING / CLOUDFLARE WORKERS MIGRATION PLAN
+# VERCEL HOSTING / COMPATIBILITY MIGRATION PLAN
 
 ## Purpose
 
-This document is the implementation plan for making the **FreeCRM backend** in this repository deployable as a **Cloudflare Worker** while preserving the existing API contract, MongoDB data model, authentication behavior, RBAC, and frontend compatibility.
+This document is an implementation specification for modifying the existing CRM backend so it can be deployed reliably on **Vercel using the Node.js runtime / Vercel Functions**, while preserving the current API, authentication, MongoDB data model, RBAC, frontend behavior, imports, exports, webhooks, and background processing.
 
-This is intended to be handed directly to a coding agent.
+This document is intended to be handed directly to a coding agent.
 
-The agent should treat this file as an engineering specification, not as a suggestion list.
+The migration should be **minimal and conservative**.
+
+Unlike a Cloudflare Workers migration, this project should remain a normal Node.js application wherever possible.
+
+The target is not to rewrite the backend into a new runtime.
+
+The target is:
+
+```text
+Existing Hono + Node.js backend
+              |
+              v
+       Vercel Node.js
+          Functions
+              |
+      +-------+--------+
+      |       |        |
+      v       v        v
+   MongoDB  Blob     Queues /
+    Atlas             Workflow
+```
 
 ---
 
-# 0. Current repository and target architecture
+# 0. Current codebase
 
-## Current repository
+The repository is a pnpm monorepo.
 
-This is a pnpm monorepo:
+Relevant structure:
 
 ```text
 /
@@ -31,8 +51,9 @@ This is a pnpm monorepo:
 └── pnpm-lock.yaml
 ```
 
-The API is currently a Node.js application using:
+The API currently uses:
 
+- Node.js 20+
 - Hono
 - `@hono/node-server`
 - MongoDB Node.js driver
@@ -41,12 +62,17 @@ The API is currently a Node.js application using:
 - bcrypt
 - argon2
 - Node `crypto`
-- process signals / `process.exit`
+- MongoDB-backed repositories
+- authentication/session middleware
+- RBAC
+- imports/exports
+- webhooks
 - a separate Node background worker
 - in-memory rate limiting
 - in-memory export file storage
+- Docker files
 
-Important current files include:
+Important files include:
 
 ```text
 apps/api/src/index.ts
@@ -54,9 +80,11 @@ apps/api/src/app.ts
 apps/api/src/config/env.ts
 apps/api/src/db/client.ts
 apps/api/src/db/index.ts
+apps/api/src/db/collections.ts
 apps/api/src/middleware/rate-limit.ts
 apps/api/src/middleware/logging.ts
 apps/api/src/middleware/auth.ts
+apps/api/src/middleware/error-handler.ts
 apps/api/src/utils/crypto.ts
 apps/api/src/utils/logger.ts
 apps/api/src/modules/auth/auth.service.ts
@@ -69,150 +97,149 @@ apps/api/worker.Dockerfile
 packages/shared/src/enums.ts
 ```
 
-## Target architecture
-
-The desired production architecture is:
-
-```text
-                           INTERNET
-                              |
-                              v
-                    +-------------------+
-                    | Cloudflare Worker |
-                    |      Hono API     |
-                    +---------+---------+
-                              |
-              +---------------+----------------+
-              |               |                |
-              v               v                v
-         MongoDB Atlas       R2             Queues
-              |                                |
-              |                                v
-              |                       Worker Queue Consumer
-              |                                |
-              +----------------+---------------+
-                               |
-                               v
-                       External integrations
-                       / webhook destinations
-
-Frontend:
-    Cloudflare Pages or a separate Cloudflare Worker
-          |
-          v
-    https://api.example.com
-```
-
-The API should become a **Workers-native Hono application**.
-
-There must no longer be a requirement for:
-
-- a listening TCP HTTP server
-- `@hono/node-server`
-- `process.on('SIGTERM')`
-- `process.exit()`
-- a permanently running Node worker
-- local process memory as durable application state
-- filesystem access at request time
-- Node-only native crypto packages
+The exact paths may vary if the repository has changed. The coding agent must inspect the repository before making assumptions.
 
 ---
 
-# 1. Non-negotiable migration rules
+# 1. Target architecture
 
-The coding agent MUST follow these rules throughout the migration.
+The preferred final architecture is:
 
-## 1.1 Preserve API behavior
+```text
+                         INTERNET
+                            |
+                            v
+                   +-------------------+
+                   |      Vercel       |
+                   |                   |
+                   | React/Vite        |
+                   |       +           |
+                   | Hono API          |
+                   | Node.js Functions |
+                   +---------+---------+
+                             |
+                +------------+-------------+
+                |            |             |
+                v            v             v
+           MongoDB Atlas   Blob        Queues /
+                                       Workflow
+                |                          |
+                |                          v
+                |                    background work
+                |                          |
+                +------------+-------------+
+                             |
+                             v
+                       integrations
+```
 
-Do not casually change:
+The backend should remain a Node.js application.
+
+Do NOT convert the backend to Cloudflare Workers APIs.
+
+Do NOT replace Node's cryptographic APIs solely for Vercel compatibility.
+
+Do NOT replace MongoDB merely to use Vercel.
+
+Do NOT introduce a new framework.
+
+---
+
+# 2. Migration principles
+
+## 2.1 Preserve the existing API
+
+Do not change:
 
 - route paths
 - HTTP methods
-- request schemas
-- response schemas
+- request formats
+- response formats
 - authentication semantics
-- RBAC semantics
-- organization scoping
-- error codes
-- pagination formats
-- frontend-facing URLs
+- RBAC
+- organization/tenant scoping
+- error response shape
+- pagination
+- filtering
+- sorting
 
-If a migration requires a behavioral change, document it explicitly and add a regression test.
+unless a change is genuinely required.
 
-## 1.2 Do not rewrite the application unnecessarily
+If a behavior must change, add a regression test and document it.
 
-The existing Hono route/controller/service/repository architecture is useful.
+## 2.2 Preserve Node.js dependencies where possible
 
-Prefer:
+Unlike a Workers migration, Vercel's Node.js runtime should allow the project to retain normal Node dependencies.
 
-```text
-existing controller
-        |
-existing service
-        |
-existing repository
-        |
-new Worker-compatible infrastructure adapter
-```
-
-over rewriting modules.
-
-## 1.3 No fake compatibility
-
-Do NOT solve Worker incompatibilities by:
-
-- silently catching unsupported runtime errors
-- adding huge polyfills without testing them
-- disabling authentication
-- weakening password hashing
-- replacing persistence with global variables
-- replacing database operations with mocks
-- making endpoints return fake data
-- removing background work from the product
-- swallowing queue/database errors
-
-The final Worker must perform real work.
-
-## 1.4 Keep Node-only tooling separate
-
-Database backup, restore, local seed scripts, test utilities, and migration scripts may remain Node-only if they are explicitly separated from the Worker bundle.
-
-For example:
+Do NOT unnecessarily replace:
 
 ```text
-apps/api/src/scripts/
-    seed.ts
-    backup.ts
-    restore.ts
+argon2
+bcrypt
+node:crypto
+pino
+mongodb
 ```
 
-may remain Node scripts.
+with browser/WASM alternatives.
 
-They must NOT be imported by the Worker entrypoint or any code reachable from the Worker bundle.
+First attempt to run the existing dependencies on Vercel's Node.js runtime.
 
-## 1.5 No secret leakage
+## 2.3 Make the API stateless
 
-Never place secrets in:
+The biggest serverless requirement is that the API must not depend on one long-running process.
 
-- source code
-- committed `.env`
-- `wrangler.jsonc` `vars`
-- frontend Vite variables
-- logs
-- API responses
-- error messages
+Avoid using process memory as durable state.
 
-Cloudflare Worker secrets must be injected through Worker secrets.
+Bad:
+
+```ts
+const jobs = new Map();
+```
+
+Good:
+
+```text
+MongoDB
+Vercel Blob
+Vercel Queue / Workflow
+Redis-compatible service
+```
+
+## 2.4 Background work must not depend on an infinite process
+
+The existing Node worker must eventually be migrated to an event-driven background mechanism.
+
+Do not run:
+
+```ts
+while (true) {
+  ...
+}
+```
+
+inside a Vercel Function.
+
+## 2.5 Keep Node-only administrative scripts
+
+These may remain Node programs:
+
+```text
+seed
+backup
+restore
+index creation
+data migration
+local development
+```
+
+They should not be part of the deployed HTTP function.
 
 ---
 
-# 2. Phase 0 — establish a clean baseline
+# 3. Phase 0 — establish baseline
 
-Before changing runtime architecture, create a reproducible baseline.
-
-## Tasks
-
-Run:
+Before changing anything:
 
 ```bash
 pnpm install --frozen-lockfile
@@ -222,16 +249,12 @@ pnpm test
 pnpm build
 ```
 
-Record every failure.
+Record failures.
 
-Do not assume existing tests are green.
-
-Create a migration branch or commit before modifying runtime infrastructure.
-
-Add a document:
+Create:
 
 ```text
-docs/cloudflare-migration-status.md
+docs/vercel-migration-status.md
 ```
 
 with:
@@ -240,6 +263,7 @@ with:
 Baseline date:
 Node version:
 pnpm version:
+Vercel CLI version:
 Typecheck:
 Lint:
 Tests:
@@ -247,164 +271,93 @@ Web build:
 API build:
 ```
 
-## Add a Worker compatibility test command
-
-Eventually the API package should have:
-
-```json
-{
-  "scripts": {
-    "dev": "...",
-    "build": "...",
-    "build:worker": "...",
-    "dev:worker": "...",
-    "test": "...",
-    "test:worker": "...",
-    "typecheck": "...",
-    "lint": "..."
-  }
-}
-```
-
-The exact command can be selected after installing/configuring Wrangler.
+Create a rollback commit before making migration changes.
 
 ## Acceptance criteria
 
-Phase 0 is complete when:
-
-- baseline failures are documented
-- existing Node API still builds
-- existing tests still run
-- a rollback point exists
-- no production behavior has changed
+- baseline is documented
+- current API still works
+- current frontend still builds
+- tests can run
+- rollback point exists
 
 ---
 
-# 3. Phase 1 — create a Worker-native entrypoint
+# 4. Phase 1 — inspect the existing API entrypoint
 
-## Goal
-
-Separate the Hono application from the Node HTTP server.
-
-The current file:
-
-```text
-apps/api/src/index.ts
-```
-
-starts a Node server using:
+The current API uses Hono and likely starts a Node HTTP server with:
 
 ```ts
 import { serve } from '@hono/node-server';
 ```
 
-This must stop being the production Worker entrypoint.
+This is the first runtime-specific piece to adapt.
 
-## Desired structure
+## Goal
 
-Create something similar to:
+Make the Hono application exportable to Vercel without changing the application itself.
 
-```text
-apps/api/
-├── src/
-│   ├── worker.ts
-│   ├── node.ts
-│   ├── app.ts
-│   └── ...
-├── wrangler.jsonc
-└── ...
-```
-
-### Worker entrypoint
-
-The Worker entrypoint should be conceptually:
-
-```ts
-import app from './app';
-
-export default app;
-```
-
-or:
-
-```ts
-export default {
-  fetch: app.fetch,
-};
-```
-
-Use the Hono-supported Workers pattern.
-
-Do not call:
-
-```ts
-serve(...)
-```
-
-inside the Worker.
-
-### Keep Node development entrypoint temporarily
-
-The existing Node development server can remain as a separate file while migration is underway:
+Keep:
 
 ```text
+app.ts
+routes
+controllers
+services
+repositories
+```
+
+intact.
+
+## Preferred structure
+
+Create:
+
+```text
+apps/api/src/app.ts
+apps/api/src/vercel.ts
 apps/api/src/node.ts
 ```
 
-It may use:
+if needed.
 
-```ts
-@hono/node-server
+The conceptual split is:
+
+```text
+app.ts
+    |
+    +--> Hono application
+
+vercel.ts
+    |
+    +--> Vercel Function adapter
+
+node.ts
+    |
+    +--> local Node development server
 ```
 
-but it must not be imported by `worker.ts`.
+The exact Vercel adapter should follow the current Hono/Vercel integration supported by the installed versions.
 
-This allows local development to continue while Worker compatibility is being migrated.
+Do not invent an adapter.
 
-Eventually the Node entrypoint may be removed if Worker-only deployment becomes the permanent architecture.
-
-## Wrangler
-
-Add a Worker configuration.
-
-Use the current Wrangler configuration format supported by the installed Wrangler version.
-
-Minimum configuration should define:
-
-- Worker name
-- Worker entrypoint
-- compatibility date
-- `nodejs_compat` only where required
-- environments if staging/production are used
-- required secrets
-- R2 bindings later
-- Queue bindings later
-
-Use the latest compatible Wrangler release rather than pinning to an obsolete version.
+Use the current official Hono Vercel integration pattern.
 
 ## Important
 
-`nodejs_compat` is allowed during migration, but it is NOT permission to keep using arbitrary Node APIs.
+The application itself should remain:
 
-The objective is:
-
-```text
-Web APIs / Workers APIs
-        >
-Node compatibility shims
+```ts
+const app = new Hono();
 ```
 
-Use native Workers APIs whenever practical.
+and routes should continue to be registered normally.
+
+The Vercel entrypoint should simply expose that Hono application through the Node.js function runtime.
 
 ## Acceptance criteria
 
-The following must work:
-
-```bash
-pnpm exec wrangler dev
-```
-
-and:
+A local Vercel-compatible invocation can reach:
 
 ```text
 GET /
@@ -412,750 +365,481 @@ GET /health
 GET /ready
 ```
 
-The Worker must start without:
-
-```text
-@hono/node-server
-process.exit
-process.on
-```
-
-being involved.
+without changing route behavior.
 
 ---
 
-# 4. Phase 2 — replace process/global environment configuration
+# 5. Phase 2 — create Vercel project configuration
 
-## Problem
+Create a Vercel configuration only where necessary.
 
-Current configuration uses:
+Prefer minimal configuration.
+
+Do not create a large custom build system.
+
+The configuration should define:
+
+- API function entrypoint
+- frontend deployment if the same Vercel project handles both
+- build settings only when automatic detection is insufficient
+
+## Monorepo considerations
+
+Determine whether the repository should use:
+
+### Option A
+
+Two Vercel projects:
+
+```text
+crm-web
+crm-api
+```
+
+Recommended if frontend and backend need independent deployments.
+
+### Option B
+
+One Vercel project.
+
+Use only if the existing monorepo setup makes this clean.
+
+For this repository, prefer **two projects** unless there is a strong reason to combine them.
+
+This gives:
+
+```text
+Frontend:
+https://app.example.com
+
+API:
+https://api.example.com
+```
+
+and allows independent deployments.
+
+## Root directory
+
+The API project should point at:
+
+```text
+apps/api
+```
+
+if that is compatible with the current workspace setup.
+
+The agent must test:
+
+```bash
+vercel build
+```
+
+from the API project context.
+
+## Acceptance criteria
+
+The API project can execute:
+
+```bash
+vercel build
+```
+
+successfully.
+
+---
+
+# 6. Phase 3 — environment variables and secrets
+
+The current application likely reads:
 
 ```ts
-dotenv
 process.env
 ```
 
-through:
+This is compatible with Vercel's Node.js runtime.
+
+Do NOT rewrite the application to Cloudflare-style `env` bindings.
+
+Instead, improve validation and deployment configuration.
+
+## Current approach
+
+If the project currently has:
 
 ```text
 apps/api/src/config/env.ts
 ```
 
-Workers should receive configuration through the Worker `env` binding.
+keep it.
 
-Cloudflare distinguishes normal configuration variables from secrets. Sensitive values must be Worker secrets.
+Make sure it validates required environment variables once per process/runtime instance.
 
-## Desired model
+## Required variables
 
-Create a Worker environment type.
-
-Conceptually:
-
-```ts
-export interface Env {
-  MONGODB_URI: string;
-  MONGODB_DATABASE: string;
-  SESSION_SECRET: string;
-  CORS_ORIGIN: string;
-  COOKIE_DOMAIN: string;
-
-  // later
-  EXPORTS_BUCKET: R2Bucket;
-  JOBS_QUEUE: Queue;
-}
-```
-
-Do not hard-code this exact interface if Wrangler type generation provides a better generated type.
-
-## Refactor configuration
-
-Do NOT keep a module-level:
-
-```ts
-export const env = envSchema.parse(process.env);
-```
-
-because that is incompatible with request-scoped Worker bindings and makes testing harder.
-
-Instead create:
+At minimum identify:
 
 ```text
-apps/api/src/config/env.ts
+MONGODB_URI
+MONGODB_DATABASE
+SESSION_SECRET
+CORS_ORIGIN
+COOKIE_DOMAIN
 ```
 
-with something conceptually like:
+and all integration-specific variables found by the audit.
 
-```ts
-export function getEnv(rawEnv: WorkerEnv) {
-  return envSchema.parse(rawEnv);
-}
-```
+## Secrets
 
-or a typed configuration object constructed from the Worker environment.
+Sensitive values must be configured through Vercel environment variables with appropriate protection.
 
-The application should receive configuration explicitly.
-
-Prefer:
-
-```text
-request
-  -> Worker env
-  -> app context
-  -> service/repository
-```
-
-rather than hidden global configuration.
-
-## Local development
-
-Use one of:
-
-```text
-.dev.vars
-```
-
-or:
+Never commit:
 
 ```text
 .env
+.env.production
 ```
 
-according to current Wrangler guidance.
+containing real values.
 
-Do not commit either file.
-
-Add:
+Create:
 
 ```text
-apps/api/.dev.vars.example
+apps/api/.env.example
 ```
 
-with placeholder values only.
+with placeholders.
 
-## Required secret names
+## Environment separation
+
+Use separate values for:
+
+```text
+development
+preview/staging
+production
+```
 
 At minimum:
 
 ```text
-SESSION_SECRET
-MONGODB_URI
+development -> local/test database
+preview     -> staging database
+production  -> production database
 ```
 
-Any integration secrets discovered during the audit must also be classified.
-
-Normal non-secret configuration can include:
-
-```text
-MONGODB_DATABASE
-CORS_ORIGIN
-COOKIE_DOMAIN
-APP_ENV
-```
-
-Do not put credentials in `vars`.
-
-## Remove dotenv from Worker dependency graph
-
-`dotenv` may remain for Node-only scripts if necessary, but it must not be imported by Worker-reachable code.
-
-If practical, remove it from the API runtime dependencies entirely.
+Do not let preview deployments access production data accidentally.
 
 ## Acceptance criteria
 
-A Worker can boot using only:
+The API starts in Vercel with:
 
 ```text
-wrangler dev
-```
-
-and Worker bindings.
-
-No Worker request path depends on:
-
-```ts
 process.env
 ```
 
-or:
+configuration.
 
-```ts
-dotenv
-```
+No secret exists in source control.
 
 ---
 
-# 5. Phase 3 — make MongoDB access Worker-compatible
+# 7. Phase 4 — MongoDB connection management
 
-## This phase is critical
+This is one of the easiest areas compared with Cloudflare.
 
-The current code uses:
+Keep the MongoDB Node.js driver.
 
-```ts
-import { MongoClient } from 'mongodb';
-```
+Do NOT migrate the database API.
 
-with a module-level connection:
+## Problem to solve
 
-```ts
-let client: MongoClient | null = null;
-let db: Db | null = null;
-```
+A serverless function can be instantiated multiple times.
 
-The current architecture assumes a conventional long-running Node process.
-
-Cloudflare now documents MongoDB Atlas as a database that Workers can connect to, but the practical compatibility of the exact MongoDB driver/runtime combination must be verified against the current Wrangler/workerd/runtime version rather than assumed.
-
-## First rule
-
-DO NOT switch to MongoDB Atlas Data API.
-
-Do not build the migration around the old Data API.
-
-Instead, first test the current official MongoDB Node driver against the current Workers runtime.
-
-## Build an isolated MongoDB Worker probe
-
-Before modifying the CRM repositories, create a tiny Worker test.
-
-For example:
+This means:
 
 ```text
-apps/api/src/db/worker-probe.ts
+request 1 -> instance A
+request 2 -> instance A
+request 3 -> instance B
+request 4 -> instance C
 ```
 
-or a temporary test Worker.
+Do not create a new MongoDB connection on every request.
 
-The probe must test:
+## Desired pattern
 
-1. Worker startup
-2. MongoClient import
-3. TLS connection
-4. Atlas authentication
-5. `ping`
-6. one `findOne`
-7. one `insert`
-8. one `update`
-9. one indexed query
-10. proper error handling
-
-Do this against a non-production database.
-
-## Important connection model
-
-Do NOT connect and close on every request.
-
-Do not write:
-
-```ts
-await client.connect();
-...
-await client.close();
-```
-
-inside every request.
-
-Prefer a reusable module-level client/cache where the runtime permits reuse.
-
-The Worker runtime may recycle isolates, so the code must tolerate:
-
-```text
-cold isolate -> new client
-warm isolate -> reused client
-recycled isolate -> new client
-```
-
-This is normal.
-
-## Refactor database module
-
-The current:
-
-```text
-apps/api/src/db/client.ts
-```
-
-should become a Worker-aware adapter.
+Use a cached connection/promise at module scope.
 
 Conceptually:
 
 ```ts
-let client: MongoClient | undefined;
+let clientPromise: Promise<MongoClient> | undefined;
 
-export async function getDatabase(env: Env): Promise<Db> {
-  if (!client) {
-    client = new MongoClient(env.MONGODB_URI, {
-      // only options proven compatible with Workers
-    });
+export function getMongoClient() {
+  if (!clientPromise) {
+    clientPromise = new MongoClient(process.env.MONGODB_URI!).connect();
   }
 
-  await ensureConnected(client);
-
-  return client.db(env.MONGODB_DATABASE);
+  return clientPromise;
 }
 ```
 
-Do not copy this exact implementation blindly. Verify the current MongoDB driver behavior under Workers.
+The exact implementation must match the current MongoDB driver version and existing repository abstractions.
 
-## Connection pooling
+## Important
 
-Measure before adding complexity.
-
-If normal module-scope reuse is sufficient, keep it simple.
-
-If repeated cold connections create unacceptable latency or connection pressure, evaluate a Durable Object-based connection manager.
-
-Do NOT introduce a Durable Object merely because it sounds architecturally sophisticated.
-
-## Database context
-
-Repositories currently call:
+Do not call:
 
 ```ts
-collections.users()
-collections.sessions()
-...
+client.close()
 ```
 
-which ultimately depend on global database state.
+at the end of every request.
 
-This should be changed to a request-safe database context.
+Allow the function runtime to reuse connections where possible.
 
-Preferred direction:
+## Database selection
+
+Keep:
 
 ```text
-Worker request
-    |
-    v
-db = await getDatabase(env)
-    |
-    v
-request context
-    |
-    v
-repository(db)
+MONGODB_URI
+MONGODB_DATABASE
 ```
 
-A transitional helper is acceptable, but no request must accidentally use a database belonging to another environment.
+explicit.
 
-## Collections
+Do not infer production database names from the hostname.
 
-Refactor:
+## Index creation
+
+Do NOT create indexes on every Function invocation.
+
+The existing:
 
 ```text
-apps/api/src/db/collections.ts
+bootstrapIndexes()
 ```
 
-so collections are created from an explicit `Db` instance.
+behavior must be moved out of request startup.
 
-Prefer:
-
-```ts
-export function createCollections(db: Db) {
-  return {
-    users: () => db.collection('users'),
-    ...
-  };
-}
-```
-
-over a singleton that secretly calls `getDatabase()`.
-
-If changing every constructor immediately is too invasive, introduce a request-scoped database accessor first, then migrate repositories systematically.
-
-## Index bootstrap
-
-The current API starts by running:
-
-```ts
-bootstrapIndexes();
-```
-
-This must NOT happen during every Worker startup.
-
-Do not run index creation on every request or every isolate cold start.
-
-Move index creation into:
-
-```text
-Node migration/admin script
-```
-
-for example:
+Create a Node administrative command:
 
 ```bash
-pnpm --filter @crm/api db:ensure-indexes
+pnpm --filter <api-package> db:ensure-indexes
 ```
 
-or keep it in the existing seed/bootstrap tooling.
-
-Production Worker startup must assume indexes already exist.
-
-## Health endpoint
-
-`/health` and `/ready` can still run a Mongo ping.
-
-But avoid excessive database health checks from automated probes.
-
-The endpoint should:
-
-```text
-ping database
-return status
-```
-
-without modifying state.
+This command can run against the target database before deployment.
 
 ## Acceptance criteria
 
-The MongoDB Worker probe passes.
+Run multiple requests locally and on Vercel.
 
-Then the actual API passes:
+Verify:
 
-```text
-GET /health
-POST /api/v1/auth/register
-POST /api/v1/auth/login
-GET /api/v1/auth/me
-GET /api/v1/contacts
-```
-
-against a real test Atlas database.
-
-No fake database adapter is acceptable.
+- MongoDB works
+- connection reuse works
+- no connection explosion occurs
+- indexes already exist
+- API startup does not mutate database schema
 
 ---
 
-# 6. Phase 4 — replace Node crypto and native password packages
+# 8. Phase 5 — authentication: keep Node crypto
 
-## Current problem
+This is intentionally different from the Cloudflare plan.
 
-The code currently imports:
+Vercel's Node.js runtime should allow the existing Node-oriented crypto dependencies.
 
-```ts
-argon2
-bcrypt
-crypto
-```
-
-The Worker must not depend on native Node password-hashing modules.
-
-The current crypto file contains:
-
-```text
-apps/api/src/utils/crypto.ts
-```
-
-and uses:
-
-```ts
-argon2
-createHmac
-randomBytes
-```
-
-There are also direct Node `crypto` imports in:
-
-```text
-apps/api/src/modules/webhooks/webhooks.service.ts
-apps/api/src/modules/api-keys/api-keys.service.ts
-```
-
-## Goal
-
-Use Workers/Web Crypto-compatible implementations.
-
-### Random bytes
-
-Replace:
-
-```ts
-randomBytes(...)
-```
-
-with:
-
-```ts
-crypto.getRandomValues(...)
-```
-
-or the appropriate Web Crypto API.
-
-Create helpers:
-
-```text
-randomBytes
-randomHex
-randomToken
-```
-
-so application code does not care about the runtime.
-
-### HMAC
-
-Replace Node:
-
-```ts
-createHmac('sha256', secret)
-```
-
-with Web Crypto:
-
-```ts
-crypto.subtle.importKey(...)
-crypto.subtle.sign('HMAC', ...)
-```
-
-The helper should return the same deterministic hexadecimal digest format currently expected by the database.
-
-IMPORTANT:
-
-Changing `hashToken()` from synchronous to asynchronous is acceptable and likely necessary.
-
-Update every caller.
-
-Search all usages before editing:
-
-```bash
-rg "hashToken|createHmac|randomBytes|argon2|bcrypt" apps/api/src
-```
-
-Do not miss:
-
-- sessions
-- password reset tokens
-- invitations
-- API keys
-- webhook signatures
-- authentication middleware
-
-## Password hashing strategy
-
-The application currently has both:
-
-```text
-argon2
-bcrypt
-```
-
-Do not simply delete support for existing hashes.
-
-Existing production users may already have password hashes.
-
-The migration must preserve login compatibility.
-
-### Preferred target
-
-Use Argon2id as the long-term password hashing algorithm if a properly maintained Workers-compatible WASM implementation is selected and verified.
-
-The implementation must:
-
-- run in Workers
-- verify the existing PHC-style Argon2 hashes currently stored
-- generate new Argon2id hashes
-- have reasonable CPU/memory settings for Workers
-- have tests for known vectors
-- not expose passwords in logs
-
-A maintained WebAssembly Argon2 implementation may be used if the agent verifies its API and compatibility.
-
-### Legacy bcrypt
-
-If the database contains bcrypt hashes, retain verification support.
-
-A Workers-compatible pure-JavaScript bcrypt implementation may be used for legacy verification if necessary.
-
-Do NOT use native `bcrypt`.
-
-### Opportunistic migration
-
-When a user logs in successfully with a legacy bcrypt hash:
-
-```text
-bcrypt verification succeeds
-        |
-        v
-generate Argon2id hash
-        |
-        v
-update user.passwordHash
-```
-
-This gradually removes legacy hashes.
-
-For existing Argon2id hashes:
-
-```text
-verify
-    |
-if parameters are weak/old:
-    rehash
-```
-
-only if the chosen library can reliably detect and verify them.
-
-## Password migration tests
-
-Add tests for:
-
-1. new Argon2id hash verifies
-2. wrong password fails
-3. existing Argon2 hash verifies
-4. legacy bcrypt hash verifies
-5. successful legacy bcrypt login upgrades hash
-6. upgraded hash no longer needs bcrypt
-7. reset-password creates new target hash
-8. change-password creates new target hash
-
-## Session token hashing
-
-Make token hashing asynchronous if using Web Crypto.
-
-Update:
-
-```text
-apps/api/src/middleware/auth.ts
-apps/api/src/modules/auth/auth.service.ts
-apps/api/src/modules/api-keys/api-keys.service.ts
-apps/api/src/modules/memberships/memberships.service.ts
-apps/api/src/modules/sessions/sessions.service.ts
-```
-
-and every other caller.
-
-## Acceptance criteria
-
-No Worker-reachable code imports:
+The coding agent should first preserve:
 
 ```text
 argon2
 bcrypt
 node:crypto
-crypto.createHmac
-crypto.randomBytes
 ```
 
-The only crypto runtime should be:
+and test them.
 
-- Web Crypto
-- Workers-supported libraries proven compatible
+## Do not perform a crypto rewrite unless required
 
-All authentication tests pass against a real test database.
+Keep:
+
+```ts
+randomBytes(...)
+createHmac(...)
+```
+
+if the existing implementation is correct.
+
+Keep:
+
+```ts
+argon2
+bcrypt
+```
+
+if they build and execute correctly.
+
+This reduces security risk.
+
+## Existing password hashes
+
+Do not invalidate existing users.
+
+Inspect the database only in aggregate.
+
+Determine whether password hashes currently include:
+
+```text
+Argon2
+bcrypt
+other
+```
+
+Never print actual hashes.
+
+If both bcrypt and Argon2 are present, preserve both verification paths.
+
+## Opportunistic upgrade
+
+If the existing application supports legacy bcrypt:
+
+```text
+login
+  |
+bcrypt verification
+  |
+success
+  |
+Argon2id rehash
+  |
+save
+```
+
+Only implement this if it is needed by the current database.
+
+Do not introduce a password migration just because the hosting platform changed.
+
+## Tests
+
+Add:
+
+- new password hash
+- correct password
+- incorrect password
+- existing Argon2 hash
+- existing bcrypt hash if present
+- password reset
+- password change
+- session authentication
+
+## Acceptance criteria
+
+Authentication works on Vercel using the same security primitives as the current Node application.
 
 ---
 
-# 7. Phase 5 — fix session/cookie handling
+# 9. Phase 6 — sessions and cookies
 
-## Current issue
+The backend uses session cookies.
 
-`packages/shared/src/enums.ts` currently determines cookie security using:
-
-```ts
-process.env.NODE_ENV
-```
-
-This is not a good Worker design.
-
-## Refactor
-
-Cookie security must be based on explicit runtime configuration.
-
-For production:
+Review:
 
 ```text
-Secure
+packages/shared/src/enums.ts
+apps/api/src/modules/auth/
+apps/api/src/middleware/auth.ts
+```
+
+## Production cookie requirements
+
+Verify:
+
+```text
 HttpOnly
-SameSite=Lax
+Secure
+SameSite
 Path=/
 ```
 
-The cookie domain should be explicitly configured when required.
+are correctly set.
 
-If frontend and API are on:
+If frontend and API are:
 
 ```text
 app.example.com
 api.example.com
 ```
 
-verify browser cookie behavior carefully.
+test cookie behavior in an actual browser.
 
-Do not automatically set an overly broad domain such as:
+## Do not use NODE_ENV incorrectly
 
-```text
-.example.com
+If cookie security currently depends on:
+
+```ts
+process.env.NODE_ENV
 ```
 
-unless required.
+verify that Vercel Preview/Production behavior matches expectations.
 
-## Session token
+It is preferable to explicitly determine production security from deployment environment/configuration.
 
-The cookie currently contains the raw session token.
+## CORS
 
-That is acceptable if:
+If using credentialed browser requests:
 
-- Secure is enabled
-- HttpOnly is enabled
-- SameSite is correct
-- token entropy remains strong
-- only the hash is stored in MongoDB
-- logout/revocation works
+```text
+credentials: include
+```
 
-Do not change the session model unnecessarily.
+the server must return the exact allowed origin.
 
-## Cookie serialization
+Never use:
 
-Use Hono's supported cookie utilities if they satisfy the project's requirements.
+```text
+Access-Control-Allow-Origin: *
+```
 
-If keeping the custom serializer, add tests for:
-
-- Secure
-- HttpOnly
-- SameSite
-- Max-Age
-- Path
-- URL encoding
+with credentialed cookies.
 
 ## Acceptance criteria
 
-Browser login works against the deployed Worker.
-
-Verify:
+Test:
 
 ```text
 register
 login
 authenticated request
-refresh
 logout
-revoked session
 expired session
+revoked session
 ```
+
+from the deployed frontend.
 
 ---
 
-# 8. Phase 6 — replace in-memory rate limiting
+# 10. Phase 7 — fix in-memory rate limiting
 
-## Current problem
+This is a real serverless issue and must be fixed.
 
-`apps/api/src/middleware/rate-limit.ts` uses:
+The current implementation uses something like:
 
 ```ts
 const limits = new Map(...)
 ```
 
-This is not a durable/distributed rate limiter.
+That cannot be the production source of truth.
 
-In Workers:
-
-- different isolates can have different Maps
-- isolates can be recycled
-- traffic may execute in different locations
-
-Therefore the current implementation must not be considered production-safe.
+Multiple Vercel function instances may exist simultaneously.
 
 ## Required behavior
 
-Preserve current limits:
+Preserve current application limits.
+
+For example:
 
 ```text
 login:
@@ -1168,81 +852,56 @@ reset password:
 3 / hour
 ```
 
-Any broader API limit must also be preserved if currently used.
+Use the exact limits currently present in the codebase.
 
-## Preferred implementation
-
-Use a Cloudflare-native shared state mechanism.
+## Storage options
 
 Evaluate:
 
-1. Durable Objects
-2. Workers KV
-3. another Cloudflare-supported rate-limit primitive
+1. Redis-compatible service
+2. Vercel-compatible rate-limit package/service
+3. another shared persistent store
 
-For security-sensitive login throttling, prefer a strongly consistent mechanism over eventually consistent storage.
+For authentication throttling, prefer a strongly reliable shared mechanism.
 
-Durable Objects are a strong candidate.
-
-Do not use KV for strict security guarantees unless the resulting semantics are explicitly accepted.
+Do not use a plain MongoDB collection for every request unless there is a clear reason and performance is acceptable.
 
 ## Rate-limit key
 
-Do not trust arbitrary user-provided:
+Use trusted request metadata.
+
+Do not blindly trust arbitrary client-provided:
 
 ```text
-x-forwarded-for
+X-Forwarded-For
 ```
 
-without understanding Cloudflare's trusted request metadata.
+headers.
 
-Use Cloudflare's request metadata / `CF-Connecting-IP` where appropriate.
-
-For login throttling, consider combining:
-
-```text
-IP
-+
-normalized email
-```
-
-so a single IP cannot attack every account while a single account cannot be attacked from unlimited IPs.
-
-Do not overcomplicate this unless tests demonstrate the requirement.
+Vercel provides request information that should be used according to its current documentation.
 
 ## Response
 
 Preserve:
 
 ```http
-429
+429 Too Many Requests
 Retry-After: <seconds>
 ```
 
-and:
-
-```json
-{
-  "error": {
-    "code": "RATE_LIMITED",
-    "message": "Too many requests"
-  }
-}
-```
+and the existing JSON error format.
 
 ## Acceptance criteria
 
-Load-test the same endpoint through multiple Worker invocations and verify the limit is shared.
+Rate limits remain effective across multiple simultaneous function instances.
 
-A process-local `Map` must no longer be the source of truth.
+No production rate limit relies on a process-local Map.
 
 ---
 
-# 9. Phase 7 — replace in-memory export storage with R2
+# 11. Phase 8 — replace in-memory export storage
 
-## Current problem
-
-`apps/api/src/modules/exports/exports.service.ts` currently does:
+The current export service contains:
 
 ```ts
 globalThis.__exportFileStore
@@ -1250,296 +909,222 @@ globalThis.__exportFileStore
 
 This is not durable.
 
-Files disappear when the Worker isolate is recycled.
+Do not keep it.
 
-## Target
+## Preferred Vercel solution
 
-Use Cloudflare R2.
+Use Vercel Blob if it fits the application's requirements.
 
-Create an R2 bucket:
+Alternative:
 
 ```text
-crm-exports
+Amazon S3
+Cloudflare R2
+other object storage
 ```
 
-or environment-specific equivalents.
+is also acceptable.
 
-Bind it to the Worker:
+If the project is intended to be Vercel-centric, prefer Vercel Blob.
 
-```text
-EXPORTS_BUCKET
-```
+## Export architecture
 
-## Storage key
-
-Preserve the existing convention:
+For small exports:
 
 ```text
-exports/<export-id>.csv
-```
-
-unless a better documented naming scheme is required.
-
-## Export flow
-
-The final architecture should be:
-
-```text
-POST /exports
-      |
-      v
-create export job in MongoDB
-      |
-      v
-enqueue export job
-      |
-      v
-return job status
-```
-
-Then:
-
-```text
-Queue consumer
-      |
-      v
-query MongoDB
-      |
-      v
+HTTP Function
+    |
+    v
 generate CSV
-      |
-      v
-R2.put(fileKey, content)
-      |
-      v
-mark MongoDB job completed
+    |
+    v
+Blob
+    |
+    v
+return metadata
 ```
 
-Do not generate large exports synchronously in the HTTP request.
-
-## Download flow
-
-The API should expose a secure download path.
-
-Possible design:
+For large exports:
 
 ```text
-GET /api/v1/exports/:id/download
+HTTP request
+    |
+    v
+create MongoDB export job
+    |
+    v
+queue/workflow
+    |
+    v
+generate CSV
+    |
+    v
+Blob
+    |
+    v
+mark job complete
 ```
 
-The handler must:
+Use the second approach if export generation can exceed a normal request's safe duration.
 
-1. authenticate
-2. verify organization ownership
-3. verify export ownership/permissions
-4. obtain R2 object
-5. return it with correct content headers
+## File security
 
-Do not expose unrestricted public R2 URLs for private CRM exports.
+Do not make CRM export files public merely to simplify downloads.
 
-## Signed URLs
+Downloads must verify:
 
-If signed URLs are used, ensure:
-
-- expiration is short
-- authorization is checked before issuing the URL
-- the URL cannot access another organization's file
+1. authentication
+2. organization
+3. export ownership
+4. permissions
 
 ## Acceptance criteria
 
-Create a real export.
+Generate a real export.
 
 Verify:
 
-```text
-Mongo job created
-queue message created
-consumer processes job
-CSV stored in R2
-job becomes completed
-download returns correct CSV
-unauthorized user cannot download it
-file survives Worker restart
-```
+- file persists
+- file survives a new function instance
+- unauthorized users cannot download it
+- organization isolation works
+- download returns correct headers
 
 ---
 
-# 10. Phase 8 — redesign imports around R2 + Queues
+# 12. Phase 9 — replace mock import implementation
 
-## Current problem
+The existing import implementation contains placeholder/mock CSV data.
 
-`apps/api/src/modules/imports/imports.service.ts` contains placeholder/mock CSV content.
+This is a functional issue independent of Vercel.
 
-It currently uses hard-coded rows such as:
+It must be replaced.
 
-```text
-John,Doe,...
-Jane,Smith,...
-```
+## Target
 
-This must not remain in the production implementation.
-
-## Target import architecture
+Use persistent file storage.
 
 ```text
 Browser
    |
-   | upload CSV
    v
-R2
-   |
-   v
-create import job in MongoDB
+Vercel Function
    |
    v
-Cloudflare Queue
+Blob
    |
    v
-consumer
-   |
-   +--> download CSV from R2
-   |
-   +--> parse
-   |
-   +--> validate
-   |
-   +--> write MongoDB
-   |
-   +--> update progress
+Import job
    |
    v
-completed/failed
+Queue / Workflow
+   |
+   v
+MongoDB
 ```
 
-## Upload
+## File size
 
-Do not send arbitrarily large files through the API if direct-to-R2 upload is practical.
-
-A better flow is:
-
-```text
-POST /imports/upload-url
-        |
-        v
-authenticated + authorized
-        |
-        v
-presigned/controlled upload target
-        |
-        v
-browser -> R2
-```
-
-If direct upload adds too much complexity for the current UI, implement a Worker-mediated upload first, but keep file size limits explicit.
-
-Current application limits include:
+Preserve the existing limit:
 
 ```text
 MAX_FILE_SIZE = 10 MB
 ```
 
-Preserve or explicitly revise this limit.
+unless the product requirements explicitly change it.
 
-## Parsing
+## CSV parser
 
-The CSV parser must handle:
+Use a real CSV parser capable of:
 
 - quoted fields
 - escaped quotes
-- commas inside quotes
-- newlines inside quoted fields if supported
+- commas in fields
 - UTF-8
 - empty values
-- malformed CSV
+- malformed rows
 
-Do not assume that splitting by newline is sufficient for arbitrary CSV.
+Do not use:
 
-Use a Workers-compatible CSV parser if needed.
-
-## Job state
-
-Use explicit states:
-
-```text
-pending
-processing
-completed
-failed
-cancelled
+```ts
+csv.split('\n')
 ```
 
-Ensure state transitions are idempotent.
+as a general CSV parser.
 
 ## Idempotency
 
-Queue consumers may retry.
+Import jobs must tolerate retries.
 
-Therefore processing must be safe if the same job is delivered more than once.
+Use:
 
-Use MongoDB state checks and/or a job attempt/idempotency key.
+```text
+jobId
+organizationId
+```
 
-Never create duplicate contacts simply because a queue message was retried.
+and deterministic record matching where appropriate.
+
+Do not create duplicate contacts when a job is retried.
 
 ## Acceptance criteria
 
-Upload a real CSV through the frontend.
+Upload a real CSV.
 
 Verify:
 
-- file stored in R2
-- import job created
-- queue message created
-- job processed
-- records created/updated correctly
-- progress is persisted
-- failure is visible
-- retry does not duplicate records
+```text
+Blob stores file
+job created
+background process runs
+records imported
+errors recorded
+retry is safe
+```
 
 ---
 
-# 11. Phase 9 — replace the Node background worker with Cloudflare Queues
+# 13. Phase 10 — migrate the Node background worker
 
-## Current worker
+The current worker is a long-running Node process.
 
-The existing file:
+It should not be run as an infinite polling process inside a Vercel Function.
 
-```text
-apps/api/src/worker/index.ts
-```
+## First choice
 
-starts a Node process, connects to MongoDB, finds one outbox event, updates it, and calls:
+Use Vercel's current background processing primitives:
 
-```ts
-process.exit(...)
-```
+- Vercel Queues
+- Vercel Workflow
 
-This is not a Worker background architecture.
+Choose based on the exact workload.
 
-## Target
+## Do not migrate everything blindly
 
-Use Cloudflare Queues.
-
-Suggested queues:
+Separate workloads into:
 
 ```text
-crm-jobs
+short async task
+long-running task
+retryable delivery
+multi-step workflow
 ```
 
-or separate queues if workloads need isolation:
+### Recommended mapping
 
 ```text
-crm-imports
-crm-exports
-crm-webhooks
+exports       -> Queue / Workflow
+imports       -> Queue / Workflow
+webhooks      -> Queue
+outbox events -> Queue
+scheduled jobs -> Vercel Cron + Queue where appropriate
 ```
 
-Do not create many queues without a reason.
+## Queue message
 
-Start with one general queue if the workload is small.
+Use small messages.
 
-## Queue message schema
-
-Create a discriminated union:
+Example:
 
 ```ts
 type JobMessage =
@@ -1559,150 +1144,80 @@ type JobMessage =
       type: 'webhook.deliver';
       webhookId: string;
       organizationId: string;
-      eventType: string;
-      payload: Record<string, unknown>;
+      eventId: string;
       version: 1;
     };
 ```
 
-Keep messages small.
+Do not put complete CSV contents into queue messages.
 
-Do not put entire CSV files or large payloads in queue messages.
+Store large data in Blob.
 
-Use R2/MongoDB for large data.
+## Idempotency
 
-## Queue consumer
+Assume at-least-once delivery.
 
-The Worker should expose a queue consumer handler.
+A job can be delivered twice.
 
-Conceptually:
-
-```ts
-export default {
-  fetch: app.fetch,
-
-  async queue(batch, env, ctx) {
-    for (const message of batch.messages) {
-      await processMessage(message.body, env);
-    }
-  },
-};
-```
-
-Use the current Cloudflare queue handler API.
-
-## Retry behavior
-
-Let transient failures retry.
-
-For permanent failures:
+Therefore:
 
 ```text
-mark job failed
+pending
+  ->
+processing
+  ->
+completed
 ```
 
-and use a dead-letter queue if appropriate.
-
-Do not implement arbitrary `setTimeout` retries inside a Worker request.
-
-## Existing outbox
-
-The MongoDB outbox pattern may be preserved if it provides business value.
-
-Possible flow:
-
-```text
-Mongo transaction/business action
-      |
-      v
-outbox event
-      |
-      v
-queue producer
-      |
-      v
-queue consumer
-```
-
-But do not leave a polling Node worker behind.
+must be safe against duplicate processing.
 
 ## Acceptance criteria
 
-The old Node worker is no longer required.
-
-Queue jobs are processed in Workers.
-
-Retrying a message does not corrupt state.
+The old infinite/polling worker is no longer required for production background processing.
 
 ---
 
-# 12. Phase 10 — redesign webhook retries
+# 14. Phase 11 — webhook delivery
 
-## Current problem
+Current webhook code uses retry logic and `setTimeout`.
 
-`apps/api/src/modules/webhooks/webhooks.service.ts` uses:
-
-```ts
-setTimeout(...)
-```
-
-inside a retry loop.
-
-That is not a good serverless retry mechanism.
+Do not rely on sleeping inside a Function.
 
 ## Target
 
-Webhook delivery should become a queue job.
-
 ```text
-application event
-      |
-      v
+event
+  |
+  v
 queue
-      |
-      v
-webhook consumer
-      |
-      v
-HTTP request
-      |
-   +--+--+
-   |     |
-success failure
-         |
-         v
-      retry queue
+  |
+  v
+webhook delivery function
+  |
+  +--> success
+  |
+  +--> retry
+  |
+  +--> permanent failure
 ```
 
-Use Queue retry/delivery mechanisms where appropriate.
+## Preserve HMAC
 
-## Signature
+Keep the current HMAC-SHA256 implementation using Node `crypto` unless there is a separate reason to change it.
 
-The webhook signature currently uses HMAC-SHA256.
+Add known-vector tests.
 
-Preserve that behavior exactly.
-
-Only change the implementation from Node crypto to Web Crypto.
-
-Add known-vector tests:
+Example:
 
 ```text
-secret
-+
-payload
-=
-expected signature
+secret + payload -> expected signature
 ```
 
-## Timeout
+## Retryable statuses
 
-Keep a bounded outbound request timeout.
+Preserve the application's current retry policy.
 
-Do not allow a webhook consumer to hang indefinitely.
-
-## Retry policy
-
-Preserve the existing intent:
+Likely retryable:
 
 ```text
 408
@@ -1713,104 +1228,59 @@ Preserve the existing intent:
 504
 ```
 
-are retryable.
+Do not invent new semantics without checking the current implementation.
 
-Maximum attempts:
+## Timeout
 
-```text
-5
+Every outbound webhook request must have a bounded timeout.
+
+Use:
+
+```ts
+AbortController
+AbortSignal.timeout(...)
 ```
 
-Current exponential delay:
+or the equivalent supported by the current Node runtime.
+
+## SSRF
+
+Audit user-configurable webhook URLs.
+
+Prevent access to:
 
 ```text
-1s
-2s
-4s
-8s
-16s
-```
-
-Cloudflare Queue retry/delay semantics should be used instead of manually sleeping.
-
-## Delivery records
-
-Every attempt should update:
-
-- attempt number
-- response status
-- response body (bounded/truncated)
-- duration
-- error
-- delivered/failed status
-
-Never store unlimited remote response bodies.
-
-## SSRF/security
-
-Before allowing arbitrary webhook URLs, review SSRF risk.
-
-The webhook system should not permit access to:
-
-```text
-internal services
 localhost
-private IP ranges
-metadata endpoints
+127.0.0.1
+private networks
+cloud metadata endpoints
+internal services
 ```
 
-unless there is an explicit trusted integration mechanism.
+unless explicitly trusted.
 
-This is important for a Worker because the Worker has outbound network access.
+## Acceptance criteria
+
+Webhook delivery:
+
+- succeeds
+- retries
+- records attempts
+- records failure
+- does not block the original API request
+- cannot be used for trivial SSRF
 
 ---
 
-# 13. Phase 11 — replace Pino with Worker-safe logging
+# 15. Phase 12 — logging
 
-## Current logger
+Pino is compatible with Node.js, so do not replace it unless deployment/build tests reveal an actual issue.
 
-The current logger uses:
+However, inspect the logging configuration.
 
-```ts
-pino
-pino-pretty
-```
+## Requirements
 
-This is Node-oriented.
-
-Do not force Pino into Workers unless the bundle is proven clean and the logging behavior is actually useful.
-
-## Target
-
-Create a tiny logger abstraction:
-
-```text
-apps/api/src/utils/logger.ts
-```
-
-with:
-
-```ts
-logger.debug(...)
-logger.info(...)
-logger.warn(...)
-logger.error(...)
-```
-
-The implementation should use:
-
-```ts
-console.debug
-console.info
-console.warn
-console.error
-```
-
-or another Worker-native logging mechanism.
-
-## Structured logs
-
-Preserve useful structured fields:
+Logs must include useful structured fields:
 
 ```text
 requestId
@@ -1820,289 +1290,250 @@ status
 duration
 userId
 organizationId
-error code
+error
 ```
 
-Do not log:
-
-- passwords
-- session tokens
-- API keys
-- cookies
-- webhook secrets
-- MongoDB credentials
-- reset tokens
-
-## Error logging
-
-Log internal error details server-side.
-
-Return sanitized errors to clients.
-
-## Acceptance criteria
-
-No Worker bundle imports:
+Never log:
 
 ```text
-pino
+password
+session token
+cookie
+API key
+reset token
+MongoDB URI
+integration secret
+webhook secret
+```
+
+## Production logger
+
+Avoid:
+
+```text
 pino-pretty
 ```
 
-unless explicitly tested and justified.
+in production if it adds unnecessary overhead.
 
----
+Use structured JSON logs in production.
 
-# 14. Phase 12 — request context and dependency injection
-
-The current code has many global singletons such as:
-
-```text
-repositories instantiated at module scope
-collections accessed through global database state
-configuration imported globally
-logger imported globally
-```
-
-This can make Worker behavior harder to reason about.
-
-Do a controlled refactor toward request context.
-
-## Preferred context
-
-Create an application context similar to:
-
-```ts
-type AppContext = {
-  env: Env;
-  db: Db;
-  collections: Collections;
-};
-```
-
-Attach it to Hono context.
-
-For example:
-
-```text
-request
-  |
-  +-- env
-  +-- db
-  +-- collections
-  +-- user
-  +-- organizationId
-  +-- permissions
-```
-
-## Do not over-engineer
-
-Do not convert every class into a giant dependency injection framework.
-
-Simple factories are enough.
-
-Example:
-
-```ts
-const repos = createRepositories(db);
-```
-
-## Authentication
-
-Authentication should use the request's database context rather than a process-global DB singleton.
+Keep pretty logging for local development if useful.
 
 ## Acceptance criteria
 
-Two concurrent requests cannot accidentally use different environments/databases through mutable global state.
+Production logs are structured and contain no secrets.
 
 ---
 
-# 15. Phase 13 — audit all Node-only APIs
+# 16. Phase 13 — request-scoped dependencies
+
+The current code may use global repository/collection objects.
+
+This can work on Vercel if they are immutable and safe, but audit them carefully.
+
+## Good
+
+```ts
+const repo = new UserRepository(collection);
+```
+
+where:
+
+```text
+collection
+```
+
+belongs to the current database.
+
+## Bad
+
+```ts
+globalDb = ...
+```
+
+where environment/database can change at runtime.
+
+## Preferred architecture
+
+```text
+Function invocation
+       |
+       v
+get MongoDB connection
+       |
+       v
+get database
+       |
+       v
+create/request repositories
+       |
+       v
+route
+```
+
+Do not create a DI framework.
+
+Use simple factories.
+
+---
+
+# 17. Phase 14 — audit global state
 
 Run:
 
 ```bash
-rg "process\\.|node:|from ['\"]crypto['\"]|from ['\"]fs['\"]|from ['\"]path['\"]|child_process|@hono/node-server|dotenv|pino|argon2|bcrypt" apps/api/src packages
+rg "globalThis|new Map|new Set|let .* = null|let .* = undefined" apps/api/src
 ```
 
-Then classify every hit.
+Classify each result.
 
-Create:
+## Allowed global state
+
+These can be acceptable:
 
 ```text
-docs/cloudflare-node-api-audit.md
+cached MongoClient promise
+immutable configuration
+static constants
+compiled schemas
 ```
 
-with:
+## Not acceptable as durable state
 
-| File | API/package | Worker safe? | Action |
-|---|---|---:|---|
-| ... | ... | ... | ... |
-
-## Categories
-
-### A — Worker-native
-
-Examples:
+These must move to persistence:
 
 ```text
-fetch
-Request
-Response
-Headers
-URL
-crypto.subtle
-crypto.getRandomValues
-setTimeout
-AbortSignal
-Web Streams
+sessions
+jobs
+rate-limit counters
+export files
+import files
+workflow state
+webhook retry state
 ```
 
-### B — supported under `nodejs_compat`
+## Important
 
-Only retain after testing.
+Module-level caches are not guaranteed to exist forever.
 
-### C — Node-only but tooling-only
-
-Examples:
+The application must work correctly after:
 
 ```text
-backup scripts
-restore scripts
-seed scripts
-local dev server
+cold start
+warm reuse
+instance replacement
+deployment
+scale-out
 ```
-
-These may remain outside the Worker bundle.
-
-### D — incompatible runtime dependency
-
-Replace.
 
 ---
 
-# 16. Phase 14 — database indexes and operational scripts
+# 18. Phase 15 — environment and deployment behavior
 
-Production Worker startup must NOT perform migrations or index creation.
+Vercel has different deployment contexts.
 
-Create/retain Node admin commands:
-
-```bash
-pnpm --filter @crm/api db:seed
-pnpm --filter @crm/api db:backup
-pnpm --filter @crm/api db:restore
-pnpm --filter @crm/api db:ensure-indexes
-```
-
-These commands can run in a normal Node environment.
-
-Document:
+Test:
 
 ```text
-Cloudflare Worker
-    |
-    | never performs startup migrations
-    v
-MongoDB Atlas
-
-Admin operator
-    |
-    v
-Node migration/index script
+local
+preview
+production
 ```
 
-## Index verification
+Do not assume:
 
-Before deployment, verify every important query has the required index.
+```ts
+NODE_ENV === 'production'
+```
 
-At minimum audit indexes for:
+is enough to distinguish all environments.
 
-- users by normalized email
-- sessions by token hash
-- sessions by expiration
-- password reset tokens by token hash
-- organization scoping
-- memberships
-- API keys by key hash
-- webhook lookups
-- import jobs
-- export jobs
-- outbox events
-- common pagination/sort fields
+If behavior differs between preview and production, use explicit configuration.
 
-Do not invent indexes blindly.
+## Required configuration
 
-Use actual repository queries to derive the index list.
+At minimum:
+
+```text
+APP_ENV
+MONGODB_URI
+MONGODB_DATABASE
+CORS_ORIGIN
+SESSION_SECRET
+```
+
+and integration secrets.
 
 ---
 
-# 17. Phase 15 — CORS and frontend integration
+# 19. Phase 16 — frontend/API split
 
-The frontend is a React/Vite app.
+Prefer two Vercel projects:
 
-It will likely be hosted separately from the API.
+```text
+crm-web
+crm-api
+```
+
+Example domains:
+
+```text
+https://app.example.com
+https://api.example.com
+```
+
+## Frontend
+
+The Vite application should use:
+
+```text
+VITE_API_URL
+```
+
+for the API base URL.
+
+Remember:
+
+```text
+VITE_*
+```
+
+variables are public.
+
+Never put secrets there.
+
+## Backend
+
+CORS must allow only the frontend origin.
 
 Example:
 
 ```text
-Frontend:
 https://app.example.com
-
-API:
-https://api.example.com
 ```
 
-Configure:
-
-```text
-CORS_ORIGIN=https://app.example.com
-```
-
-Do not use:
+not:
 
 ```text
 *
 ```
 
-when credentials/cookies are involved.
-
-## Cookies
-
-If using cross-origin frontend/API requests:
-
-```text
-fetch(..., { credentials: 'include' })
-```
-
-must match server CORS configuration.
-
-Server must send:
-
-```text
-Access-Control-Allow-Origin: https://app.example.com
-Access-Control-Allow-Credentials: true
-```
-
-Do not combine:
-
-```text
-Allow-Origin: *
-```
-
-with credentialed requests.
+for credentialed requests.
 
 ## Acceptance criteria
 
-From the deployed frontend:
+Production browser tests show:
 
 - login works
-- authenticated API requests work
+- cookies work
+- API requests work
 - logout works
-- no CORS console errors
-- cookies are stored and sent correctly
+- no CORS errors
 
 ---
 
-# 18. Phase 16 — health/readiness endpoints
+# 20. Phase 17 — health endpoints
 
 Keep:
 
@@ -2111,43 +1542,142 @@ GET /health
 GET /ready
 ```
 
-but make their semantics explicit.
-
 ## `/health`
 
-Should answer whether the Worker itself is functioning.
+Should indicate the Function is alive.
 
-Prefer not to make `/health` depend on a database ping unless that is intentionally the application's liveness definition.
+Do not make it unnecessarily expensive.
 
 ## `/ready`
 
 Can check:
 
-- MongoDB connectivity
-- required configuration
-- required bindings
-
-Example:
-
-```json
-{
-  "status": "ready",
-  "database": {
-    "status": "healthy"
-  }
-}
+```text
+MongoDB connectivity
+required configuration
+required services
 ```
 
 Do not expose:
 
-- connection strings
-- internal errors
-- secrets
-- stack traces
+```text
+MongoDB URI
+internal stack traces
+secrets
+```
 
 ---
 
-# 19. Phase 17 — error handling
+# 21. Phase 18 — API function duration review
+
+Review every endpoint for execution time.
+
+Classify:
+
+```text
+<1 second
+1–5 seconds
+5–30 seconds
+>30 seconds
+```
+
+Anything that may be long-running should be moved to:
+
+```text
+Queue
+Workflow
+background processing
+```
+
+Do not depend on maximum Function duration to make long-running APIs work.
+
+Examples:
+
+```text
+POST /imports
+POST /exports
+webhook bulk delivery
+large reports
+large CSV generation
+```
+
+should preferably enqueue work and return a job identifier.
+
+---
+
+# 22. Phase 19 — database query audit
+
+Serverless performance makes database latency more visible.
+
+Audit:
+
+```text
+N+1 queries
+unbounded queries
+large document reads
+missing indexes
+large sort operations
+large aggregation pipelines
+```
+
+For every important endpoint:
+
+```text
+filter
+sort
+pagination
+projection
+```
+
+should be deliberate.
+
+Avoid:
+
+```ts
+find({}).toArray()
+```
+
+for large collections.
+
+## Pagination
+
+Prefer existing cursor/keyset pagination where practical.
+
+If the current API uses page/offset pagination, preserve the public API unless changing it is necessary.
+
+---
+
+# 23. Phase 20 — database indexes
+
+Do not create indexes from the Function startup.
+
+Create an administrative script.
+
+Audit actual queries.
+
+At minimum inspect indexes for:
+
+```text
+users.email
+sessions.tokenHash
+sessions.expiresAt
+password reset tokens
+organization membership
+API keys
+webhooks
+imports
+exports
+outbox events
+common contact/company/lead/deal searches
+```
+
+Do not blindly create all possible indexes.
+
+Indexes should correspond to actual query patterns.
+
+---
+
+# 24. Phase 21 — error handling
 
 Review:
 
@@ -2155,445 +1685,52 @@ Review:
 apps/api/src/middleware/error-handler.ts
 ```
 
-Ensure errors are Worker-compatible.
-
-## Rules
-
-Production responses must not contain:
+Production errors must not expose:
 
 ```text
-stack
-file paths
+stack traces
+filesystem paths
 MongoDB connection strings
 secret values
+internal credentials
 ```
 
-Preserve existing error shape.
+Preserve the current API error schema.
 
 Add tests for:
 
-- validation errors
-- authentication failures
-- authorization failures
-- not found
-- conflict
-- rate limiting
-- database failures
-- unexpected exceptions
+```text
+400
+401
+403
+404
+409
+422
+429
+500
+```
+
+where relevant.
 
 ---
 
-# 20. Phase 18 — observability and request IDs
+# 25. Phase 22 — tenant isolation
 
-The current API already has request IDs.
+This CRM is multi-tenant.
 
-Preserve that behavior.
+This is a mandatory security audit.
 
-Every request should have:
-
-```text
-requestId
-```
-
-and logs should include it.
-
-When a queue job runs, generate/propagate:
-
-```text
-jobId
-requestId
-```
-
-so an operation can be traced across:
-
-```text
-HTTP request
- -> MongoDB job
- -> Queue
- -> consumer
- -> R2
- -> webhook
-```
-
-Do not log secrets.
-
----
-
-# 21. Phase 19 — bundle and dependency audit
-
-After migration, inspect the Worker bundle.
-
-Use Wrangler's bundle/metafile capabilities if available.
-
-Look for:
-
-```text
-argon2
-bcrypt
-pino
-pino-pretty
-@hono/node-server
-dotenv
-Node filesystem modules
-Node child_process
-```
-
-They should not appear in the production Worker bundle unless specifically justified and verified.
-
-## Dependency rules
-
-Production Worker dependencies should be minimal.
-
-Do not add a large library merely to replace a 10-line Web API helper.
-
-Before adding a dependency ask:
-
-1. Does it work in Workers?
-2. Is it ESM compatible?
-3. Does it use Node native modules?
-4. Does it contain WASM?
-5. Is the WASM loading model compatible with Workers?
-6. Does it materially increase bundle size?
-7. Is it maintained?
-8. Is there a Web API alternative?
-
----
-
-# 22. Phase 20 — Worker-compatible tests
-
-Create a test suite specifically for the Worker runtime.
-
-At minimum:
-
-## Runtime tests
-
-- Worker boots
-- route responds
-- environment bindings load
-- secrets load
-- MongoDB connects
-- R2 binding exists
-- Queue binding exists
-
-## Auth tests
-
-- registration
-- login
-- logout
-- session authentication
-- expired session
-- revoked session
-- password reset
-- password change
-- API key auth
-
-## Security tests
-
-- rate limit
-- CORS
-- authorization
-- organization isolation
-- SSRF protection for webhooks
-- cookie flags
-- invalid API key
-- invalid session
-
-## Persistence tests
-
-- create/read/update/delete
-- pagination
-- indexes
-- organization filtering
-
-## Queue tests
-
-- enqueue
-- consume
-- retry
-- idempotency
-- permanent failure
-
-## R2 tests
-
-- upload
-- download
-- missing object
-- authorization
-- deletion
-
----
-
-# 23. Phase 21 — organization isolation audit
-
-This application is multi-tenant.
-
-This migration must NOT weaken organization scoping.
-
-Every repository/query that operates on organization-owned resources must be audited.
-
-For every endpoint ask:
-
-```text
-Can user A from organization A access organization B's record?
-```
-
-Test this explicitly.
-
-Especially audit:
-
-- contacts
-- companies
-- leads
-- deals
-- tasks
-- notes
-- activities
-- imports
-- exports
-- attachments
-- webhooks
-- integrations
-- API keys
-- audit logs
-- reports
-- search
-
-The Worker migration is not complete until tenant isolation is tested.
-
----
-
-# 24. Phase 22 — security review of Cloudflare-specific trust boundaries
-
-Review all client IP usage.
-
-Do not trust arbitrary headers supplied by an attacker.
-
-Review:
-
-```text
-x-forwarded-for
-x-real-ip
-CF-Connecting-IP
-```
-
-Use Cloudflare's documented request metadata appropriately.
-
-Review outbound fetches.
-
-Any user-controlled URL must be treated as potentially dangerous.
-
-Review:
-
-```text
-webhooks
-integrations
-external providers
-image/file URLs
-redirects
-```
-
----
-
-# 25. Phase 23 — deployment configuration
-
-Create environments:
-
-```text
-development
-staging
-production
-```
-
-Recommended names:
-
-```text
-crm-api-dev
-crm-api-staging
-crm-api
-```
-
-Use separate:
-
-- MongoDB databases/clusters
-- R2 buckets
-- queues
-- secrets
-
-for staging and production.
-
-Never point staging at production data unless explicitly intended.
-
-## Example logical resources
-
-```text
-Production:
-
-Worker:
-crm-api
-
-MongoDB:
-crm-production
-
-R2:
-crm-exports-production
-
-Queue:
-crm-jobs-production
-```
-
-Staging:
-
-```text
-crm-api-staging
-crm-staging
-crm-exports-staging
-crm-jobs-staging
-```
-
----
-
-# 26. Phase 24 — secrets
-
-Declare required secret names in Wrangler configuration where supported.
-
-At minimum:
-
-```text
-MONGODB_URI
-SESSION_SECRET
-```
-
-Potential additional secrets:
-
-```text
-SMTP/API provider secrets
-integration credentials
-webhook signing secrets if globally configured
-OAuth client secrets
-```
-
-Per-webhook secrets should remain in MongoDB if that is the existing data model, but they must never be returned except at creation time if that is the existing intended behavior.
-
-## Secret rotation
-
-Document how to rotate:
-
-```text
-SESSION_SECRET
-MONGODB_URI
-integration credentials
-```
-
-Be careful with `SESSION_SECRET`.
-
-If session token hashing does not actually depend on it, do not pretend rotation invalidates sessions.
-
-Audit the current `SESSION_SECRET` usage before deciding its rotation semantics.
-
----
-
-# 27. Phase 25 — Docker files
-
-The following files may become obsolete for the Worker deployment:
-
-```text
-apps/api/Dockerfile
-apps/api/worker.Dockerfile
-docker-compose.yml
-```
-
-Do NOT delete them immediately.
-
-First determine whether they are still useful for:
-
-- local development
-- MongoDB local development
-- CI
-- fallback Node deployment
-
-If no longer needed, remove them in a dedicated cleanup commit.
-
-The production deployment path should not depend on Docker.
-
----
-
-# 28. Phase 26 — frontend deployment
-
-The frontend already uses Vite.
-
-Deploy:
-
-```text
-apps/web
-```
-
-to Cloudflare Pages or a Worker-based static deployment.
-
-Set its API URL to:
-
-```text
-https://api.example.com
-```
-
-Do not hard-code localhost.
-
-Audit:
-
-```text
-apps/web/src/lib/request.ts
-```
-
-and all API modules for the API base URL.
-
-Use a Vite public environment variable such as:
-
-```text
-VITE_API_URL
-```
-
-Do not put backend secrets in Vite variables.
-
-Anything prefixed with `VITE_` should be assumed public.
-
----
-
-# 29. Phase 27 — deployment smoke test
-
-After staging deployment, run the following sequence.
-
-## Public endpoints
-
-```text
-GET /
-GET /health
-GET /ready
-```
-
-## Authentication
-
-```text
-POST /api/v1/auth/register
-POST /api/v1/auth/login
-GET /api/v1/auth/me
-POST /api/v1/auth/logout
-```
-
-## Authorization
-
-Create:
+Create at least:
 
 ```text
 Organization A
 User A
+
 Organization B
 User B
 ```
 
-Verify A cannot access B.
-
-## CRUD
-
-Test at least:
+Verify A cannot access B's:
 
 ```text
 contacts
@@ -2602,537 +1739,1002 @@ leads
 deals
 tasks
 notes
+activities
+imports
+exports
+attachments
+webhooks
+integrations
+API keys
+audit logs
+reports
 ```
 
-## Async
-
-Test:
+Audit every repository query for:
 
 ```text
-export
-import
-webhook
+organizationId
 ```
 
-## Persistence
+where appropriate.
 
-Restart/redeploy the Worker.
+Do not trust resource IDs alone.
+
+---
+
+# 26. Phase 23 — API key security
+
+Audit API key handling.
 
 Verify:
 
 ```text
-sessions remain
-jobs remain
-exports remain
-imports remain
-files remain
+raw key shown only when appropriate
+hash stored instead of raw key
+constant-time comparison where applicable
+revocation works
+organization scoping works
+permissions work
 ```
+
+If the current implementation uses Node `crypto`, keep it unless testing identifies a real incompatibility.
 
 ---
 
-# 30. Phase 28 — load and concurrency testing
+# 27. Phase 24 — export/import security
 
-The Worker environment is concurrent and distributed.
+Exports and imports contain potentially sensitive CRM data.
+
+Verify:
+
+```text
+authentication
+authorization
+organization ownership
+file ownership
+size limits
+content validation
+```
+
+Do not allow a user to supply an export ID belonging to another organization and retrieve it.
+
+Do not allow arbitrary file paths.
+
+Do not use local filesystem storage as persistent application storage.
+
+---
+
+# 28. Phase 25 — Vercel Blob integration
+
+If Vercel Blob is selected, create a small storage adapter:
+
+```text
+apps/api/src/storage/blob.ts
+```
+
+Conceptual interface:
+
+```ts
+interface FileStorage {
+  put(key: string, data: BodyInit, options?: PutOptions): Promise<...>;
+  get(key: string): Promise<...>;
+  delete(key: string): Promise<void>;
+}
+```
+
+Keep the application independent of the storage provider.
+
+This makes migration to S3/R2 possible later.
+
+Do not spread Blob SDK calls throughout controllers.
+
+---
+
+# 29. Phase 26 — queue abstraction
+
+Likewise, create:
+
+```text
+apps/api/src/queue/
+```
+
+with a small abstraction.
+
+Conceptual:
+
+```ts
+enqueue(message)
+```
+
+Do not make controllers know the exact queue provider.
+
+For example:
+
+```text
+controller
+   |
+   v
+job service
+   |
+   v
+queue adapter
+   |
+   v
+Vercel Queue
+```
+
+This makes testing easier.
+
+---
+
+# 30. Phase 27 — background worker migration strategy
+
+Do not delete:
+
+```text
+apps/api/src/worker/index.ts
+```
+
+immediately.
+
+First reproduce each job type using the new queue/background mechanism.
+
+For each existing worker job:
+
+```text
+job type
+current behavior
+new trigger
+new consumer
+retry behavior
+idempotency behavior
+```
+
+Document it.
+
+Only delete the old worker once every job type has a replacement.
+
+---
+
+# 31. Phase 28 — scheduled jobs
+
+If the current worker periodically checks for:
+
+```text
+outbox events
+expired sessions
+cleanup
+scheduled work
+```
+
+determine whether each should become:
+
+```text
+Vercel Cron
+    +
+Function
+    +
+Queue
+```
+
+Example:
+
+```text
+Cron
+  |
+  v
+find pending jobs
+  |
+  v
+enqueue
+  |
+  v
+worker
+```
+
+Do not put large amounts of work directly into a cron request.
+
+---
+
+# 32. Phase 29 — local Vercel development
+
+The project must be testable locally in a way that approximates deployment.
+
+Use the Vercel CLI where appropriate:
+
+```bash
+vercel dev
+```
+
+and:
+
+```bash
+vercel build
+```
+
+The exact commands may vary with the monorepo setup.
 
 Test:
 
-- 10 concurrent requests
-- 50 concurrent requests
-- repeated login attempts
-- concurrent writes to the same resource
-- multiple queue messages
-- duplicate queue delivery
-- concurrent export jobs
+```text
+health
+auth
+CRUD
+imports
+exports
+webhooks
+```
 
-Watch for:
+through the Vercel-compatible entrypoint.
+
+Do not test only through the old Node `@hono/node-server` entrypoint.
+
+---
+
+# 33. Phase 30 — build verification
+
+Run:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm lint
+pnpm test
+```
+
+Then:
+
+```bash
+vercel build
+```
+
+Inspect the resulting build.
+
+Ensure:
+
+- Hono is bundled correctly
+- MongoDB driver is included correctly
+- argon2/bcrypt are included correctly if used
+- native modules are handled correctly by Vercel
+- no accidental frontend dependencies are bundled into API
+- no secrets are embedded
+
+---
+
+# 34. Phase 31 — production dependency audit
+
+Run:
+
+```bash
+pnpm why @hono/node-server
+pnpm why argon2
+pnpm why bcrypt
+pnpm why mongodb
+pnpm why pino
+```
+
+Determine which are required at runtime.
+
+Do not remove:
 
 ```text
+argon2
+bcrypt
+mongodb
+pino
+```
+
+just because they are Node-specific.
+
+The point is to verify they work under Vercel's Node runtime.
+
+---
+
+# 35. Phase 32 — Vercel function bundle audit
+
+Inspect the built function.
+
+Look for accidental inclusion of:
+
+```text
+frontend source
+test files
+fixtures
+large CSV samples
+backup files
+Docker files
+development-only packages
+```
+
+Do not package unnecessary files.
+
+---
+
+# 36. Phase 33 — security headers
+
+Review API responses.
+
+Where appropriate, add:
+
+```text
+X-Content-Type-Options: nosniff
+Referrer-Policy
+Content-Security-Policy
+```
+
+Be careful not to add a CSP that breaks the frontend.
+
+For an API, the header set can be simpler than the frontend's.
+
+---
+
+# 37. Phase 34 — request size limits
+
+Audit:
+
+```text
+JSON body
+multipart body
+CSV uploads
+query parameters
+webhook payloads
+```
+
+Do not allow unexpectedly large requests.
+
+Preserve existing application limits.
+
+If a large upload is required, prefer:
+
+```text
+direct Blob upload
+```
+
+rather than routing large files through the Function.
+
+---
+
+# 38. Phase 35 — timeout and outbound requests
+
+Audit every:
+
+```ts
+fetch(...)
+```
+
+in the backend.
+
+Every outbound call should have:
+
+- timeout
+- bounded response size where applicable
+- error handling
+- retry behavior if appropriate
+
+Do not let external APIs hold a Function open indefinitely.
+
+---
+
+# 39. Phase 36 — idempotency audit
+
+Serverless functions can be retried or requests can be repeated.
+
+Audit:
+
+```text
+POST endpoints
+webhooks
+imports
+exports
+payment-like actions if any
+email sending
+integration actions
+```
+
+Where a duplicate operation would be harmful, implement idempotency.
+
+Use:
+
+```text
+idempotency key
+unique database constraint
+job ID
+event ID
+```
+
+where appropriate.
+
+---
+
+# 40. Phase 37 — observability
+
+Every HTTP request should have:
+
+```text
+requestId
+```
+
+Every background job should have:
+
+```text
+jobId
+eventId
+```
+
+Logs should allow tracing:
+
+```text
+HTTP request
+  ->
+Mongo job
+  ->
+queue
+  ->
+consumer
+  ->
+Blob
+  ->
+webhook
+```
+
+Do not expose internal identifiers unnecessarily in public responses.
+
+---
+
+# 41. Phase 38 — staging deployment
+
+Create a dedicated Vercel preview/staging environment.
+
+Use:
+
+```text
+staging MongoDB
+staging Blob
+staging Queue
+staging secrets
+```
+
+Never use production data for ordinary staging tests.
+
+## Smoke tests
+
+Run:
+
+```text
+GET /health
+GET /ready
+
+register
+login
+me
+logout
+
+CRUD
+
+import
+export
+webhook
+
+API key
+RBAC
+tenant isolation
+```
+
+---
+
+# 42. Phase 39 — concurrency testing
+
+Test:
+
+```text
+10 concurrent requests
+50 concurrent requests
+100 concurrent requests where appropriate
+```
+
+Pay particular attention to:
+
+```text
+MongoDB connection reuse
+duplicate writes
+rate limiting
 race conditions
-duplicate records
-connection errors
-MongoServerSelectionError
-socket errors
-rate-limit inconsistencies
+job duplication
+webhook duplication
 ```
 
-Do not declare the migration successful merely because one request works.
+The application must remain correct when multiple Function instances execute simultaneously.
 
 ---
 
-# 31. Phase 29 — performance testing
+# 43. Phase 40 — cold-start testing
 
-Measure:
+Test after deployment/redeployment.
+
+Verify:
 
 ```text
-cold request
-warm request
-MongoDB ping
-simple read
-authenticated read
-complex search
-export enqueue
-queue processing
-R2 download
+first request
+second request
+parallel first requests
 ```
 
-Record p50/p95 where possible.
+Do not assume module-level state exists.
 
-If MongoDB connection establishment dominates cold requests:
-
-1. verify module-level client reuse
-2. verify MongoDB region
-3. verify Atlas network configuration
-4. benchmark again
-5. only then consider Durable Object connection management
-
-Do not prematurely introduce a Durable Object.
+The application must correctly initialize after a cold start.
 
 ---
 
-# 32. Phase 30 — production readiness checklist
+# 44. Phase 41 — failure testing
 
-The coding agent MUST NOT mark the migration complete until all of the following are true.
+Simulate:
 
-## Runtime
+```text
+MongoDB temporarily unavailable
+Blob unavailable
+queue failure
+webhook timeout
+webhook 500
+malformed import
+invalid session
+invalid API key
+```
 
-- [ ] Worker boots
-- [ ] Hono uses Worker fetch handler
-- [ ] `@hono/node-server` is not in Worker bundle
-- [ ] no `process.exit()` in Worker path
-- [ ] no `process.on()` in Worker path
-- [ ] no filesystem dependency in Worker path
-- [ ] no child-process dependency in Worker path
+Verify errors are:
 
-## Configuration
+```text
+safe
+recoverable
+observable
+```
 
-- [ ] Worker env bindings used
-- [ ] secrets are Worker secrets
-- [ ] no committed secrets
-- [ ] no production secrets in frontend
-- [ ] development/staging/production separated
+and do not leave jobs permanently stuck.
 
-## MongoDB
+---
 
-- [ ] current official driver works in the current Worker runtime
-- [ ] real Atlas connection tested
-- [ ] no fake DB implementation
-- [ ] connection reuse implemented
-- [ ] cold isolate reconnect works
-- [ ] indexes created outside Worker startup
-- [ ] tenant isolation tests pass
+# 45. Phase 42 — old Docker deployment
+
+Do not delete Docker files immediately.
+
+Determine whether these are still needed:
+
+```text
+apps/api/Dockerfile
+apps/api/worker.Dockerfile
+docker-compose.yml
+```
+
+If Docker is no longer used:
+
+1. remove deployment references
+2. update README
+3. remove CI references
+4. then delete files in a separate cleanup change
+
+---
+
+# 46. Phase 43 — old worker cleanup
+
+After the new background architecture is verified:
+
+```text
+apps/api/src/worker/index.ts
+```
+
+may be removed.
+
+Before removal, confirm all worker responsibilities are replaced.
+
+Do not remove it merely because the API works.
+
+---
+
+# 47. Phase 44 — deployment scripts
+
+Add useful package scripts.
+
+Example:
+
+```json
+{
+  "scripts": {
+    "dev": "...",
+    "dev:vercel": "...",
+    "build": "...",
+    "build:vercel": "vercel build",
+    "test": "...",
+    "typecheck": "...",
+    "lint": "...",
+    "db:ensure-indexes": "...",
+    "db:seed": "...",
+    "db:backup": "...",
+    "db:restore": "..."
+  }
+}
+```
+
+Use the repository's actual package name and existing scripts.
+
+Do not blindly overwrite existing scripts.
+
+---
+
+# 48. Phase 45 — CI
+
+CI should run:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm build
+vercel build
+```
+
+if Vercel CLI authentication/setup allows it.
+
+CI must fail when:
+
+- TypeScript fails
+- tests fail
+- Vercel build fails
+- required environment validation fails
+- forbidden production artifacts are included
+
+---
+
+# 49. Phase 46 — final API compatibility audit
+
+Before production, compare the old API and new Vercel API.
+
+For every route record:
+
+```text
+method
+path
+request
+response
+status codes
+auth requirement
+permissions
+```
+
+Use automated API tests where possible.
+
+No route should silently disappear.
+
+---
+
+# 50. Phase 47 — final security audit
+
+Verify:
 
 ## Authentication
 
-- [ ] registration works
-- [ ] login works
-- [ ] logout works
-- [ ] session expiry works
-- [ ] session revocation works
-- [ ] password reset works
-- [ ] password change works
-- [ ] existing Argon2 hashes can be verified
-- [ ] legacy bcrypt hashes can be verified if present
-- [ ] new hashes use the selected Worker-compatible secure algorithm
-- [ ] Node native crypto is removed from Worker path
+- [ ] passwords never logged
+- [ ] password hashes never returned
+- [ ] session tokens never logged
+- [ ] API keys never logged
+- [ ] reset tokens never logged
+- [ ] cookies are secure
+- [ ] authentication works after cold start
 
-## Rate limiting
+## Authorization
 
-- [ ] process-local Map removed
-- [ ] shared rate limit implemented
-- [ ] login limit tested
-- [ ] reset limit tested
-- [ ] Retry-After works
+- [ ] organization isolation
+- [ ] role checks
+- [ ] resource ownership
+- [ ] API key permissions
 
-## Storage
+## Files
 
-- [ ] exports use R2
-- [ ] imports use R2
-- [ ] private files are not publicly exposed
-- [ ] organization authorization checked before download
-
-## Queues
-
-- [ ] background worker replaced by Queue consumer
-- [ ] imports queued
-- [ ] exports queued
-- [ ] webhook retries queued
-- [ ] duplicate delivery is safe
-- [ ] permanent failures are recorded
-- [ ] dead-letter strategy documented
+- [ ] imports private
+- [ ] exports private
+- [ ] file authorization checked
+- [ ] file size limits
+- [ ] no path traversal
 
 ## Webhooks
 
-- [ ] HMAC signature preserved
-- [ ] Web Crypto used
-- [ ] retries do not block requests
-- [ ] outbound timeout exists
-- [ ] SSRF protections reviewed
+- [ ] SSRF reviewed
+- [ ] outbound timeout
+- [ ] HMAC signature
+- [ ] retries
+- [ ] no secret leakage
 
-## Logging
+## Database
 
-- [ ] Worker-compatible logger
-- [ ] request IDs retained
-- [ ] secrets never logged
-- [ ] errors sanitized for clients
+- [ ] no production URI in source
+- [ ] indexes present
+- [ ] queries scoped
+- [ ] connection reuse
+
+---
+
+# 51. Phase 48 — final production readiness checklist
+
+The coding agent MUST NOT mark this migration complete until:
+
+## Vercel runtime
+
+- [ ] API builds on Vercel
+- [ ] Hono runs correctly
+- [ ] Node.js runtime selected
+- [ ] no accidental Edge runtime
+- [ ] all Node dependencies work
+- [ ] API routes work through Vercel
+
+## MongoDB
+
+- [ ] Atlas connection works
+- [ ] connection reuse works
+- [ ] no connection per request
+- [ ] indexes exist
+- [ ] no startup index creation
+- [ ] tenant isolation passes
+
+## Authentication
+
+- [ ] registration
+- [ ] login
+- [ ] logout
+- [ ] session
+- [ ] password reset
+- [ ] password change
+- [ ] API keys
+- [ ] existing password hashes remain valid
+
+## Storage
+
+- [ ] no in-memory export storage
+- [ ] Blob/S3/R2 persistence
+- [ ] private file access
+- [ ] authorization
+
+## Background jobs
+
+- [ ] old infinite worker replaced or explicitly retained outside Vercel
+- [ ] imports processed asynchronously
+- [ ] exports processed asynchronously
+- [ ] webhook retries asynchronous
+- [ ] retries are idempotent
+
+## Rate limiting
+
+- [ ] no production process-local Map
+- [ ] shared state
+- [ ] 429 behavior preserved
 
 ## Frontend
 
 - [ ] API URL configurable
-- [ ] CORS configured
-- [ ] credentialed cookies work
-- [ ] production frontend can log in
-- [ ] all major CRUD flows work
+- [ ] CORS correct
+- [ ] cookies work
+- [ ] production login works
+- [ ] no CORS errors
 
 ## Testing
 
-- [ ] typecheck passes
-- [ ] lint passes
-- [ ] unit tests pass
-- [ ] Worker tests pass
-- [ ] staging smoke tests pass
-- [ ] concurrency tests pass
-- [ ] tenant isolation tests pass
+- [ ] typecheck
+- [ ] lint
+- [ ] unit tests
+- [ ] integration tests
+- [ ] Vercel build
+- [ ] staging smoke test
+- [ ] concurrency test
+- [ ] cold-start test
+- [ ] tenant-isolation test
 
 ---
 
-# 33. Recommended implementation order
+# 52. Recommended implementation order
 
-Do NOT attempt the whole migration in one giant change.
-
-Use this order:
+Follow this order:
 
 ```text
 PHASE 0
 Baseline
 
-      ↓
+   ↓
 
 PHASE 1
-Worker entrypoint
+Vercel/Hono entrypoint
 
-      ↓
+   ↓
 
 PHASE 2
-Worker environment/config
+Vercel project configuration
 
-      ↓
+   ↓
 
 PHASE 3
-MongoDB Worker compatibility
+Environment/secrets
 
-      ↓
+   ↓
 
 PHASE 4
-Web Crypto + password hashing
+MongoDB connection management
 
-      ↓
+   ↓
 
 PHASE 5
-Sessions/cookies
+Authentication verification
 
-      ↓
+   ↓
 
 PHASE 6
-Distributed rate limiting
+Sessions/cookies/CORS
 
-      ↓
+   ↓
 
 PHASE 7
-R2 exports
+Distributed rate limiting
 
-      ↓
+   ↓
 
 PHASE 8
-R2 imports
+Persistent exports
 
-      ↓
+   ↓
 
 PHASE 9
-Cloudflare Queues
+Real imports
 
-      ↓
+   ↓
 
 PHASE 10
-Webhook queue/retry
+Background worker migration
 
-      ↓
+   ↓
 
 PHASE 11
-Worker logging
+Webhook background processing
 
-      ↓
+   ↓
 
 PHASE 12
-Request context / dependency cleanup
+Logging
 
-      ↓
+   ↓
 
 PHASE 13
-Node API audit
+Global state audit
 
-      ↓
+   ↓
 
-PHASE 14
-Database operations/index tooling
+PHASE 14+
+Security/performance/testing
 
-      ↓
+   ↓
 
-PHASE 15
-CORS/frontend integration
+STAGING
 
-      ↓
-
-PHASE 16+
-Testing, security, performance, staging
-
-      ↓
+   ↓
 
 PRODUCTION
 ```
 
-Do not move to the next phase if the previous phase has unresolved runtime failures.
+Do not attempt all phases in one giant commit.
 
 ---
 
-# 34. Important MongoDB decision gate
+# 53. Critical decision: do NOT over-migrate
 
-This is the most important decision point in the migration.
+The biggest mistake the coding agent can make is taking a Cloudflare-style migration plan and applying it to Vercel.
 
-After Phase 3, classify the MongoDB integration as one of:
+Do NOT:
 
-### Option A — native driver works
+- replace Node `crypto` with Web Crypto unnecessarily
+- replace Argon2 with WASM unnecessarily
+- replace bcrypt unnecessarily
+- replace MongoDB
+- remove Pino just because it is Node-oriented
+- remove Node APIs that Vercel supports
+- rewrite Hono routes
+- rewrite repositories
+- convert everything to fetch-only APIs
+- introduce Durable Objects
+- introduce Cloudflare-specific APIs
 
-Use:
-
-```text
-MongoDB Node driver
-+
-Cloudflare Workers
-+
-nodejs_compat if required
-```
-
-Continue with the plan.
-
-### Option B — native driver imports but fails at runtime
-
-Do NOT ship a fragile production polyfill immediately.
-
-Stop and document the exact failure.
-
-Then evaluate:
-
-1. current Wrangler/workerd version
-2. current MongoDB driver version
-3. Cloudflare TCP/socket support
-4. MongoDB TLS requirements
-5. supported connection pattern
-6. bundle/runtime errors
-
-Only adopt a third-party compatibility layer after testing it against:
-
-- Atlas
-- TLS
-- authentication
-- reads
-- writes
-- concurrency
-- retries
-- cold starts
-
-### Option C — native driver is operationally unacceptable
-
-If the driver technically works but connection setup is too expensive or unreliable, evaluate:
-
-- Durable Object connection management
-- another supported database access layer
-- moving the database to a Cloudflare-optimized SQL platform
-- keeping the API on a conventional Node host
-
-Do not migrate the database schema merely to satisfy a hosting preference unless the performance/cost tradeoff is justified.
+The desired result is a **Vercel-compatible Node application**, not a generic serverless abstraction.
 
 ---
 
-# 35. Important password hashing decision gate
+# 54. Critical decision: what must actually change
 
-The coding agent MUST inspect the actual database before deleting bcrypt/Argon2 support.
-
-Run an administrative query to determine what formats exist.
-
-Do not print password hashes in logs or output.
-
-Only report aggregate counts such as:
+The following are the areas that genuinely need attention:
 
 ```text
-Argon2 hashes: N
-bcrypt hashes: N
-unknown hashes: N
+1. Vercel/Hono entrypoint
+2. serverless-safe MongoDB connection reuse
+3. process-local rate limiting
+4. process-local file storage
+5. long-running background worker
+6. long-running imports/exports
+7. webhook retry architecture
+8. environment/deployment configuration
+9. CORS/cookie behavior
+10. global-state audit
+11. tenant isolation testing
+12. Vercel build/runtime testing
 ```
 
-Then choose the migration strategy.
-
-If only Argon2 hashes exist:
-
-```text
-simpler migration
-```
-
-If bcrypt hashes exist:
-
-```text
-legacy verification + opportunistic rehash
-```
-
-If unknown formats exist:
-
-```text
-STOP and investigate
-```
-
-Never silently invalidate user passwords.
+Everything else should remain as close to the existing implementation as possible.
 
 ---
 
-# 36. Important export/import decision gate
+# 55. Important decision: background worker can temporarily remain separate
 
-The current import/export code contains placeholder/mock processing.
-
-The coding agent MUST distinguish:
+If Vercel background processing cannot be migrated safely in the first pass, it is acceptable to temporarily deploy:
 
 ```text
-hosting migration
+Vercel
+  |
+  +--> API
+
+Separate Node service
+  |
+  +--> existing worker
+
+MongoDB Atlas
 ```
 
-from:
+This is preferable to deleting functionality or forcing a fragile queue migration.
+
+The migration can then proceed:
 
 ```text
-feature completion
+Phase 1
+API -> Vercel
+
+Phase 2
+Frontend -> Vercel
+
+Phase 3
+worker -> queue/workflow
+
+Phase 4
+retire Node worker
 ```
 
-Do not claim imports/exports are production-ready merely because they run in a Queue.
-
-Before production, the actual business logic must replace mock data.
-
-For imports, replace hard-coded CSV content with the actual uploaded R2 object.
-
-For exports, query the requested entity and filters from MongoDB rather than generating mock rows.
-
-This is a functional requirement, not merely a Cloudflare requirement.
+This staged approach is explicitly allowed.
 
 ---
 
-# 37. Important queue idempotency rules
+# 56. Important decision: keep a conventional Node deployment fallback
 
-Every queue handler must be safe to retry.
+Until Vercel staging has passed all tests, keep the existing Node deployment path working.
 
-Use:
-
-```text
-jobId
-eventId
-attempt
-```
-
-where appropriate.
-
-For a job:
+This means:
 
 ```text
-pending -> processing -> completed
+Node entrypoint
 ```
 
-If a second consumer sees:
+should remain available during migration.
 
-```text
-completed
-```
+Do not delete it until:
 
-it should acknowledge/ignore the duplicate rather than execute the operation again.
-
-For record creation, use unique constraints or deterministic keys where possible.
-
-Never assume exactly-once delivery.
-
-Design for:
-
-```text
-at-least-once delivery
-```
+- Vercel staging is stable
+- all major API routes work
+- background work is migrated or intentionally externalized
+- rollback has been tested
 
 ---
 
-# 38. Important R2 security rules
+# 57. Suggested final structure
 
-R2 objects for CRM data are private by default.
-
-Never expose a bucket publicly just to simplify downloads.
-
-All download access must go through an authorization boundary.
-
-Verify:
-
-```text
-authenticated user
-organization
-resource ownership
-permission
-file existence
-```
-
-before returning the file.
-
-For deletion:
-
-```text
-delete MongoDB metadata
-delete R2 object
-```
-
-or the reverse, depending on failure-handling strategy.
-
-Do not leave orphaned files indefinitely.
-
-Add cleanup tooling later if necessary.
-
----
-
-# 39. Important API compatibility rules
-
-Do not change:
-
-```text
-/api/v1/...
-```
-
-during this migration.
-
-Do not change frontend request formats unless absolutely necessary.
-
-If a route must change:
-
-1. add the new route
-2. keep the old route temporarily
-3. update frontend
-4. test both
-5. remove old route in a separate cleanup phase
-
-The goal is infrastructure migration, not API redesign.
-
----
-
-# 40. Suggested files after migration
-
-The final structure should trend toward:
+The final repository should trend toward:
 
 ```text
 apps/api/
 ├── src/
-│   ├── worker.ts
 │   ├── app.ts
+│   ├── vercel.ts
+│   ├── node.ts                 # temporary/fallback if needed
 │   ├── config/
 │   │   └── env.ts
-│   ├── context/
-│   │   └── app-context.ts
 │   ├── db/
 │   │   ├── client.ts
 │   │   ├── collections.ts
@@ -3144,7 +2746,7 @@ apps/api/
 │   │   ├── producer.ts
 │   │   └── consumer.ts
 │   ├── storage/
-│   │   └── r2.ts
+│   │   └── blob.ts
 │   ├── utils/
 │   │   ├── crypto.ts
 │   │   └── logger.ts
@@ -3153,233 +2755,83 @@ apps/api/
 │       ├── backup.ts
 │       ├── restore.ts
 │       └── ensure-indexes.ts
-├── wrangler.jsonc
-├── .dev.vars.example
+├── .env.example
+├── vercel.json                # only if actually required
 └── package.json
 ```
 
-Exact filenames may differ, but the separation of concerns should remain.
+The exact filenames may differ.
+
+Do not create files solely to match this diagram.
 
 ---
 
-# 41. Suggested Wrangler resource model
+# 58. Suggested production architecture
 
-The exact syntax must follow the currently installed Wrangler version, but the conceptual configuration should contain:
+The preferred final setup is:
 
 ```text
-Worker
-  |
-  +-- environment variables
-  |
-  +-- secrets
-  |
-  +-- R2 binding
-  |
-  +-- Queue producer binding
-  |
-  +-- Queue consumer
+                        VERCEL
+             +------------------------+
+             |                        |
+             |   React/Vite           |
+             |        |               |
+             |        v               |
+             |   Hono API             |
+             |   Node.js Functions    |
+             |                        |
+             +----------+-------------+
+                        |
+           +------------+-------------+
+           |            |             |
+           v            v             v
+      MongoDB Atlas   Blob        Queue/Workflow
+                                      |
+                                      v
+                              Background processing
+                                      |
+                          +-----------+----------+
+                          |                      |
+                          v                      v
+                       Imports               Webhooks
+                       Exports               Integrations
 ```
 
-For example:
+The system should remain:
 
 ```text
-EXPORTS_BUCKET
-JOBS_QUEUE
+Node.js
+Hono
+MongoDB
+Argon2/bcrypt
+Node crypto
 ```
 
-Use generated Worker types where available.
-
-Do not hand-maintain duplicate environment interfaces if Wrangler can generate them.
+where those technologies already work.
 
 ---
 
-# 42. Local development model
+# 59. Final instructions to the coding agent
 
-Local development should support:
-
-```bash
-pnpm dev:web
-pnpm dev:api
-```
-
-and eventually:
-
-```bash
-pnpm dev:worker
-```
-
-The important requirement is that Worker-specific behavior can be tested locally with Wrangler.
-
-Do not rely exclusively on the old Node server.
-
-There should be a documented path:
-
-```text
-local browser
-   |
-   v
-Wrangler Worker
-   |
-   v
-test MongoDB
-   |
-   +--> local/remote R2
-   |
-   +--> local/remote Queue
-```
-
-Use remote resources only when required and clearly mark them.
-
----
-
-# 43. CI requirements
-
-CI should eventually run:
-
-```bash
-pnpm install --frozen-lockfile
-pnpm typecheck
-pnpm lint
-pnpm test
-pnpm build:web
-pnpm build:worker
-```
-
-If practical, also run a Worker smoke test.
-
-CI must fail if:
-
-- Worker bundle contains known forbidden native dependencies
-- typecheck fails
-- tests fail
-- Wrangler configuration is invalid
-
----
-
-# 44. Deployment commands
-
-The exact commands depend on the final package scripts, but the target workflow should be approximately:
-
-```bash
-pnpm install --frozen-lockfile
-
-pnpm typecheck
-pnpm lint
-pnpm test
-
-pnpm --filter @crm/api build:worker
-
-pnpm exec wrangler deploy --env staging
-```
-
-After staging verification:
-
-```bash
-pnpm exec wrangler deploy --env production
-```
-
-Secrets should be configured through Wrangler/dashboard secret mechanisms.
-
-Never put secret values into deployment command history when a secure prompt/secret command is available.
-
----
-
-# 45. Rollback strategy
-
-Before production deployment:
-
-1. keep the previous deployment available
-2. keep MongoDB schema/data backward-compatible
-3. do not run destructive migrations
-4. deploy Worker changes independently where possible
-5. test staging
-6. deploy production
-7. monitor
-8. rollback Worker if necessary
-
-Database changes should follow:
-
-```text
-expand
-  ->
-deploy
-  ->
-migrate data
-  ->
-verify
-  ->
-contract
-```
-
-not:
-
-```text
-destructive migration
-  ->
-hope deployment works
-```
-
----
-
-# 46. Final acceptance test
-
-The migration is complete only when this entire scenario works against staging:
-
-## User journey
-
-1. Open frontend.
-2. Register.
-3. Receive authenticated session.
-4. Create organization data.
-5. Create contacts.
-6. Create companies.
-7. Create a lead.
-8. Create a deal.
-9. Create a task.
-10. Create an API key.
-11. Authenticate using the API key.
-12. Create an export.
-13. Queue processes export.
-14. CSV appears in R2.
-15. Download CSV through authorized endpoint.
-16. Upload a real CSV.
-17. Queue processes import.
-18. Imported records appear in MongoDB.
-19. Create webhook.
-20. Trigger webhook.
-21. Webhook delivery succeeds or retries.
-22. Log out.
-23. Session is revoked.
-24. Attempt authenticated request again.
-25. Request is rejected.
-26. Create a second organization.
-27. Verify first organization cannot access second organization's records.
-
-Then restart/redeploy the Worker and repeat critical operations.
-
----
-
-# 47. Final instructions to the coding agent
-
-You are modifying an existing production-oriented CRM codebase.
+You are modifying an existing CRM codebase.
 
 Do not treat this as a greenfield rewrite.
 
-Your job is to make the existing backend **Cloudflare Workers friendly while preserving functionality**.
+The application is already substantially Node-compatible.
 
-Work phase-by-phase.
+Your job is to make it **safe and reliable on Vercel Functions** with the minimum necessary architectural changes.
 
-For each phase:
+For every phase:
 
-1. inspect the current code
+1. inspect the current implementation
 2. make the smallest coherent change
-3. update tests
+3. update/add tests
 4. run typecheck
 5. run lint
 6. run relevant tests
-7. run Worker compatibility tests
-8. document anything discovered
-9. only then continue
+7. run Vercel build/runtime tests
+8. document findings
+9. continue only after the phase is stable
 
 At the end of each phase, record:
 
@@ -3388,98 +2840,154 @@ Phase:
 Changes:
 Files changed:
 Tests:
+Deployment result:
 Known limitations:
 Next phase:
 ```
 
-If a Cloudflare/MongoDB/runtime compatibility issue is encountered, do not hide it.
+If a dependency does not work on Vercel:
 
-Record:
+1. reproduce the problem
+2. identify the exact runtime/build error
+3. check the current official Vercel documentation
+4. determine whether configuration fixes it
+5. only then consider replacing the dependency
 
-```text
-Exact error:
-Runtime version:
-Wrangler version:
-MongoDB driver version:
-Minimal reproduction:
-What was tested:
-```
+Do not replace secure cryptographic code merely because it is Node-specific.
 
-Then choose the safest supported architecture.
+Do not weaken authentication.
 
-Do not introduce unverified community polyfills into production simply because they make a single test pass.
+Do not replace persistence with process memory.
 
-Do not weaken authentication or data isolation to make deployment easier.
+Do not remove organization isolation.
 
-Do not replace real persistence with process memory.
+Do not make large API changes.
 
-Do not delete Node tooling until it is clear that it is no longer required.
+Do not delete the existing Node worker until its responsibilities have been migrated or explicitly kept in a separate Node service.
 
 The final objective is:
 
 ```text
-React/Vite frontend
-        |
-        v
-Cloudflare
-   Worker + Hono
-        |
-        +------ MongoDB Atlas
-        |
-        +------ R2
-        |
-        +------ Queues
-        |
-        +------ external APIs/webhooks
+Existing CRM
+    |
+    v
+Vercel Node.js Functions
+    |
+    +---- MongoDB Atlas
+    |
+    +---- persistent file storage
+    |
+    +---- background queue/workflow
+    |
+    +---- external integrations
 ```
 
 with:
 
 ```text
-no Node HTTP server
-no native password hashing dependency
-no process-local rate limiter
-no process-local file store
-no permanently running background worker
-no startup database migration
-no secret leakage
-no tenant-isolation regression
+minimal code changes
+stateless request handling
+persistent application state
+safe serverless concurrency
+working authentication
+working MongoDB
+working imports/exports
+working webhooks
+working tenant isolation
+reliable background processing
 ```
-
-The implementation should be boring, testable, explicit, and maintainable.
 
 ---
 
-# 48. Official reference material
+# 60. Final acceptance scenario
 
-Use current official documentation when implementation details conflict with this plan.
+The migration is complete only when this entire staging scenario works.
 
-Cloudflare Workers:
-https://developers.cloudflare.com/workers/
+## User journey
 
-Cloudflare Node.js compatibility:
-https://developers.cloudflare.com/workers/runtime-apis/nodejs/
+1. Open the deployed frontend.
+2. Register a user.
+3. Create an organization.
+4. Log in.
+5. Verify session cookie.
+6. Load current user.
+7. Create contacts.
+8. Create companies.
+9. Create leads.
+10. Create deals.
+11. Create tasks.
+12. Create notes.
+13. Create an API key.
+14. Authenticate through the API key.
+15. Create an export.
+16. Export is persisted.
+17. Download the export.
+18. Upload a real CSV.
+19. Import job is created.
+20. Background processing runs.
+21. Imported records appear.
+22. Create a webhook.
+23. Trigger the webhook.
+24. Verify delivery/retry behavior.
+25. Log out.
+26. Verify session is rejected.
+27. Create a second organization.
+28. Verify organization A cannot access organization B.
+29. Redeploy/restart.
+30. Verify persistent state still exists.
+31. Verify imports/exports still work.
+32. Verify authentication still works.
+33. Verify rate limits work across concurrent Function instances.
 
-Cloudflare environment variables and secrets:
-https://developers.cloudflare.com/workers/configuration/environment-variables/
-https://developers.cloudflare.com/workers/configuration/secrets/
+Only after this passes should the old Node deployment be considered removable.
 
-Wrangler configuration:
-https://developers.cloudflare.com/workers/wrangler/configuration/
+---
 
-Cloudflare database connectivity:
-https://developers.cloudflare.com/workers/databases/connecting-to-databases/
+# 61. Official documentation references
 
-Cloudflare R2:
-https://developers.cloudflare.com/r2/
+Use current official documentation whenever implementation details have changed.
 
-Cloudflare Queues:
-https://developers.cloudflare.com/queues/
+Vercel:
+https://vercel.com/docs
 
-MongoDB Node.js driver:
+Vercel Functions:
+https://vercel.com/docs/functions
+
+Vercel Node.js runtime:
+https://vercel.com/docs/functions/runtimes/node-js
+
+Vercel Fluid Compute:
+https://vercel.com/docs/fluid-compute
+
+Hono on Vercel:
+https://vercel.com/docs/frameworks/backend/hono
+
+Vercel environment variables:
+https://vercel.com/docs/environment-variables
+
+Vercel Blob:
+https://vercel.com/docs/storage/vercel-blob
+
+Vercel Queues:
+https://vercel.com/docs/queues
+
+Vercel Workflow:
+https://vercel.com/docs/workflow
+
+Vercel Cron:
+https://vercel.com/docs/cron-jobs
+
+Vercel CLI:
+https://vercel.com/docs/cli
+
+MongoDB Node.js Driver:
 https://www.mongodb.com/docs/drivers/node/current/
 
 MongoDB Atlas:
 https://www.mongodb.com/docs/atlas/
 
-When documentation has changed since this document was written, prefer the current official documentation and record the deviation in the migration status document.
+When this document conflicts with current official documentation, use the current official documentation and record the deviation in:
+
+```text
+docs/vercel-migration-status.md
+```

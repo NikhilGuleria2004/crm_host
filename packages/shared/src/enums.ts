@@ -6,6 +6,12 @@ export const TASK_STATUSES = ['open', 'in_progress', 'completed', 'cancelled'] a
 export const TASK_PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const;
 export const ACTIVITY_TYPES = ['call', 'email', 'meeting', 'demo', 'follow_up', 'note', 'other'] as const;
 
+declare const process: {
+  env: {
+    NODE_ENV: string;
+  };
+};
+
 export const DEFAULT_PIPELINE_STAGES = [
   { name: 'New', order: 0, probability: 10, isWon: false, isLost: false },
   { name: 'Qualified', order: 1, probability: 40, isWon: false, isLost: false },

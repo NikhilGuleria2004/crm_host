@@ -31,17 +31,25 @@ vi.mock('../src/db/collections', () => ({
   },
 }));
 
+vi.mock('../src/utils/crypto', () => ({
+  hashToken: vi.fn(() => 'hash'),
+  hashPassword: vi.fn(),
+  comparePasswords: vi.fn(),
+  generateSessionToken: vi.fn(),
+}));
+
 function createHonoContext(overrides: any = {}): any {
   const store = new Map<string, any>();
+  const defaultReq = {
+    cookie: vi.fn(),
+    header: vi.fn(),
+    path: '/api/v1/test',
+    method: 'GET',
+    json: vi.fn(() => Promise.resolve({})),
+  };
   
   return {
-    req: {
-      cookie: vi.fn(),
-      header: vi.fn(),
-      path: '/api/v1/test',
-      method: 'GET',
-      json: vi.fn(() => Promise.resolve({})),
-    },
+    req: { ...defaultReq, ...overrides.req },
     res: { status: 200 },
     json: vi.fn((data, status) => ({ data, status })),
     set: vi.fn((key: string, value: any) => { store.set(key, value); }),
@@ -232,7 +240,7 @@ describe('RBAC Test Matrix (Implementation.md §6)', () => {
       });
       
       const c = createHonoContext({
-        req: { cookie: vi.fn(() => 'session_token') },
+        req: { header: vi.fn((name: string) => name === 'Cookie' ? 'crm_session=testtoken' : undefined) },
       });
       
       await authenticate(c, vi.fn());
@@ -268,7 +276,7 @@ describe('RBAC Test Matrix (Implementation.md §6)', () => {
       });
       
       const c = createHonoContext({
-        req: { cookie: vi.fn(() => 'session_token') },
+        req: { header: vi.fn((name: string) => name === 'Cookie' ? 'crm_session=testtoken' : undefined) },
       });
       
       await authenticate(c, vi.fn());

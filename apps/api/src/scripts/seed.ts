@@ -7,7 +7,6 @@ import { logger } from '../utils/logger';
 import { env } from '../config/env';
 import { RoleService } from '../modules/roles/roles.service';
 import { RoleRepository } from '../modules/roles/roles.repository';
-import { MembershipRepository } from '../modules/memberships/memberships.repository';
 
 const DEMO_USERS = [
   { email: 'owner@example.test', password: 'Password123!', firstName: 'Owner', lastName: 'User', roleKey: 'owner' },
