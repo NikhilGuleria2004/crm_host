@@ -14,7 +14,8 @@
     "test:watch": "vitest",
     "db:seed": "tsx src/scripts/seed.ts",
     "db:backup": "tsx src/scripts/backup.ts",
-    "db:restore": "tsx src/scripts/restore.ts"
+    "db:restore": "tsx src/scripts/restore.ts",
+    "db:ensure-indexes": "tsx src/scripts/ensure-indexes.ts"
   },
   "dependencies": {
     "@crm/shared": "workspace:*",

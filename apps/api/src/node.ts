@@ -1,6 +1,6 @@
 import { serve } from '@hono/node-server';
 import app from './app';
-import { connectDatabase, bootstrapIndexes, closeDatabase } from './db';
+import { connectDatabase, closeDatabase } from './db';
 import { logger } from './utils/logger';
 
 const port = Number(process.env.PORT ?? 3000);
@@ -8,8 +8,7 @@ const port = Number(process.env.PORT ?? 3000);
 async function start() {
   try {
     await connectDatabase();
-    await bootstrapIndexes();
-    logger.info('Database connected and indexes bootstrapped');
+    logger.info('Database connected');
 
     const server = serve({
       fetch: app.fetch,

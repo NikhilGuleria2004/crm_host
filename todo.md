@@ -35,12 +35,12 @@
 - [x] Verify API starts in Vercel with `process.env` configuration
 
 ## Phase 4 — MongoDB Connection Management
-- [ ] Audit `apps/api/src/db/client.ts` for connection reuse pattern
-- [ ] Ensure module-level cached connection/promise (no per-request `client.close()`)
-- [ ] Verify no connection explosion under multiple requests
-- [ ] Move `bootstrapIndexes()` out of request startup
-- [ ] Create `pnpm --filter @crm/api db:ensure-indexes` admin script
-- [ ] Verify indexes exist and API startup does not mutate schema
+- [x] Audit `apps/api/src/db/client.ts` for connection reuse pattern
+- [x] Ensure module-level cached connection/promise (no per-request `client.close()`)
+- [x] Verify no connection explosion under multiple requests
+- [x] Move `bootstrapIndexes()` out of request startup
+- [x] Create `pnpm --filter @crm/api db:ensure-indexes` admin script
+- [x] Verify indexes exist and API startup does not mutate schema
 
 ## Phase 5 — Authentication (Keep Node Crypto)
 - [ ] Inspect current password hash types (Argon2, bcrypt, other)

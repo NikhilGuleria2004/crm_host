@@ -165,6 +165,78 @@ All environment variables are centralized in `apps/api/src/config/env.ts` using 
 
 ---
 
+## Phase 4 — MongoDB Connection Management
+
+**Status:** Complete  
+**Commit:** (pending)
+
+### Audit Results
+
+**`apps/api/src/db/client.ts`** — Module-level cached connection pattern:
+```typescript
+let client: MongoClient | null = null;
+let db: Db | null = null;
+
+export async function connectDatabase(): Promise<Db> {
+  if (db) return db;  // returns cached connection
+  client = new MongoClient(env.MONGODB_URI);
+  await client.connect();
+  db = client.db(env.MONGODB_DATABASE);
+  return db;
+}
+```
+
+**Connection reuse:** Pass — module-level singleton ensures one connection per Function instance. No per-request `client.close()`.
+
+**No connection explosion:** Pass — `closeDatabase()` is only called in:
+- `worker/index.ts` — on worker shutdown
+- `node.ts` — on graceful shutdown (SIGTERM/SIGINT)
+- `scripts/seed.ts` and `scripts/DataSeeder.ts` — after seeding completes
+- **Not called in any request handler or middleware**
+
+### Changes
+
+1. **`apps/api/src/node.ts`** — Removed `bootstrapIndexes()` from local dev server startup. Startup now only connects to the database and starts the HTTP server.
+
+2. **`apps/api/src/vercel.ts`** — Added eager `connectDatabase()` call on cold start:
+   ```typescript
+   connectDatabase().catch((error) => {
+     console.error('Failed to connect to database on cold start:', error);
+   });
+   ```
+   This ensures the DB connection is established when the Vercel Function instance loads, before the first request.
+
+3. **`apps/api/src/scripts/ensure-indexes.ts`** — Created new admin script for explicit index management:
+   ```typescript
+   import { connectDatabase, bootstrapIndexes, closeDatabase } from '../db';
+   // connects, ensures indexes, closes
+   ```
+
+4. **`apps/api/package.json`** — Added `db:ensure-indexes` script:
+   ```json
+   "db:ensure-indexes": "tsx src/scripts/ensure-indexes.ts"
+   ```
+
+### Verification
+
+| Check | Result |
+|-------|--------|
+| `pnpm typecheck` | Pass |
+| `pnpm lint` | Pass |
+| `pnpm test` | 455 passed (48 test files) |
+| `pnpm build` | Pass |
+| Connection reuse | Pass — module-level singleton in `client.ts` |
+| No per-request close | Pass — `closeDatabase()` not in request path |
+| Indexes out of startup | Pass — `bootstrapIndexes()` removed from `node.ts` |
+| Admin script | Pass — `db:ensure-indexes` added to package.json |
+
+### Known Limitations
+
+- `bootstrapIndexes()` is still called by seed scripts (`seed.ts`, `DataSeeder.ts`) which is intentional.
+- Vercel cold-start connection latency depends on MongoDB driver handshake time.
+
+---
+
 ## Next Phase
 
-**Phase 4:** MongoDB Connection Management
+**Phase 5:** Authentication (Keep Node Crypto)
