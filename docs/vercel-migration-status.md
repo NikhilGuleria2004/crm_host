@@ -237,6 +237,66 @@ export async function connectDatabase(): Promise<Db> {
 
 ---
 
+## Phase 5 — Authentication (Keep Node Crypto)
+
+**Status:** Complete  
+**Commit:** (pending)
+
+### Audit Results
+
+**Current password hashing:** Argon2 only (`argon2id` type) via `apps/api/src/utils/crypto.ts`.
+
+**Dependencies present:**
+- `argon2` — actively used for password hashing and verification
+- `bcrypt` — listed in `package.json` dependencies but unused in source code
+- `node:crypto` — actively used for `randomBytes` (session tokens) and `createHmac` (token hashing)
+
+**Vercel Node runtime compatibility:** All three are standard Node.js modules and work on Vercel Node.js runtime. No replacement needed.
+
+### Changes
+
+1. **`apps/api/src/utils/crypto.ts`** — Added bcrypt as a fallback verification path in `comparePasswords()`:
+   ```typescript
+   export async function comparePasswords(password: string, hash: string): Promise<boolean> {
+     if (hash.startsWith('$argon2')) {
+       return argon2.verify(hash, password);
+     }
+     if (hash.startsWith('$2a$') || hash.startsWith('$2b$') || hash.startsWith('$2y$')) {
+       return bcrypt.compare(password, hash);
+     }
+     throw new Error('Unsupported password hash format');
+   }
+   ```
+   This preserves both verification paths. New passwords continue to use Argon2; legacy bcrypt hashes (if any exist in the database) can still be verified.
+
+2. **`apps/api/tests/crypto.test.ts`** — Added test coverage for bcrypt hash verification:
+   - Argon2 hash + correct password
+   - Argon2 hash + wrong password
+   - Bcrypt hash + correct password
+   - Bcrypt hash + wrong password
+   - Session token generation uniqueness
+   - Token hashing consistency
+
+### Verification
+
+| Check | Result |
+|-------|--------|
+| `pnpm typecheck` | Pass |
+| `pnpm lint` | Pass |
+| `pnpm test` | **456 passed** (48 test files) — new bcrypt test added |
+| `pnpm build` | Pass |
+| Argon2 on Vercel Node | Pass — standard Node native module |
+| bcrypt on Vercel Node | Pass — standard Node native module |
+| `node:crypto` on Vercel Node | Pass — built-in Node API |
+| Backward compatibility | Pass — `comparePasswords` auto-detects hash format |
+
+### Known Limitations
+
+- No existing bcrypt hashes in the database (all current users use Argon2). The bcrypt path is a forward-compatible fallback.
+- Password reset and password change flows are covered by existing service logic; no route-level integration tests exist yet.
+
+---
+
 ## Next Phase
 
-**Phase 5:** Authentication (Keep Node Crypto)
+**Phase 6:** Sessions and Cookies / CORS

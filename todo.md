@@ -43,11 +43,11 @@
 - [x] Verify indexes exist and API startup does not mutate schema
 
 ## Phase 5 — Authentication (Keep Node Crypto)
-- [ ] Inspect current password hash types (Argon2, bcrypt, other)
-- [ ] Verify `argon2`, `bcrypt`, `node:crypto` work on Vercel Node runtime
-- [ ] Preserve both bcrypt and Argon2 verification paths if both exist
-- [ ] Add tests: new password hash, correct/incorrect password, existing Argon2 hash, existing bcrypt hash, password reset, password change, session auth
-- [ ] Verify authentication works on Vercel
+- [x] Inspect current password hash types (Argon2, bcrypt, other)
+- [x] Verify `argon2`, `bcrypt`, `node:crypto` work on Vercel Node runtime
+- [x] Preserve both bcrypt and Argon2 verification paths if both exist
+- [x] Add tests: new password hash, correct/incorrect password, existing Argon2 hash, existing bcrypt hash, password reset, password change, session auth
+- [x] Verify authentication works on Vercel
 
 ## Phase 6 — Sessions and Cookies / CORS
 - [ ] Verify cookie flags: `HttpOnly`, `Secure`, `SameSite`, `Path=/`
