@@ -359,7 +359,7 @@ export async function connectDatabase(): Promise<Db> {
 ## Phase 7 — Fix In-Memory Rate Limiting
 
 **Status:** Complete  
-**Commit:** (pending)
+**Commit:** `6e840a5`
 
 ### Audit Results
 
