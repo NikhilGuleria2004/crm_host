@@ -411,7 +411,7 @@ export async function connectDatabase(): Promise<Db> {
 ## Phase 8 — Replace In-Memory Export Storage
 
 **Status:** Complete  
-**Commit:** (pending)
+**Commit:** `0e1d928`
 
 ### Audit Results
 
