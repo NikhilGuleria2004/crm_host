@@ -3,6 +3,13 @@ import { ObjectId } from 'mongodb';
 import { Hono } from 'hono';
 import { createImportsRoutes } from '../src/modules/imports/imports.routes';
 
+vi.mock('../src/storage/mongo-file-storage', () => ({
+  fileStorage: {
+    put: vi.fn().mockResolvedValue(undefined),
+    get: vi.fn().mockResolvedValue(null),
+  },
+}));
+
 function createMockCollection() {
   return {
     findOne: vi.fn(),
@@ -55,7 +62,7 @@ describe('P26 Imports Routes', () => {
       _id: new ObjectId(importId),
       organizationId: new ObjectId(orgAId),
       entity: 'contacts',
-      fileKey: 'upload.csv',
+      fileKey: 'imports/test.csv',
       status: 'pending',
       totalRows: 100,
       processedRows: 0,
@@ -69,6 +76,9 @@ describe('P26 Imports Routes', () => {
     mockImportJobs.findOne.mockImplementation((query: any) => {
       if (query._id?.toString() === importId) {
         return Promise.resolve({ ...mockJob, _id: new ObjectId(importId), organizationId: new ObjectId(orgAId) });
+      }
+      if (query.fileKey) {
+        return Promise.resolve(null);
       }
       return Promise.resolve(null);
     });
@@ -134,8 +144,33 @@ describe('P26 Imports Routes', () => {
     });
   });
 
+  describe('POST /api/v1/imports', () => {
+    it('should create import job from file upload', async () => {
+      const app = createAppWithAuth();
+      const formData = new FormData();
+      formData.append('entity', 'contacts');
+      const csvContent = 'First Name,Last Name,Email\nJohn,Doe,john@example.com';
+      formData.append('file', new Blob([csvContent], { type: 'text/csv' }), 'contacts.csv');
+
+      const response = await app.request('/api/v1/imports', {
+        method: 'POST',
+        body: formData,
+      });
+
+      expect(response.status).toBe(201);
+      const data = await response.json();
+      expect(data.data.entity).toBe('contacts');
+    });
+  });
+
   describe('POST /api/v1/imports/:id/preview', () => {
     it('should preview import data', async () => {
+      const mockFileStorage = await import('../src/storage/mongo-file-storage');
+      mockFileStorage.fileStorage.get.mockResolvedValue({
+        content: Buffer.from('First Name,Last Name,Email\nJohn,Doe,john@example.com'),
+        contentType: 'text/csv',
+      });
+
       const app = createAppWithAuth();
       const response = await app.request(`/api/v1/imports/${importId}/preview`, {
         method: 'POST',
@@ -152,6 +187,12 @@ describe('P26 Imports Routes', () => {
 
   describe('POST /api/v1/imports/:id/start', () => {
     it('should start import processing', async () => {
+      const mockFileStorage = await import('../src/storage/mongo-file-storage');
+      mockFileStorage.fileStorage.get.mockResolvedValue({
+        content: Buffer.from('First Name,Last Name,Email\nJohn,Doe,john@example.com'),
+        contentType: 'text/csv',
+      });
+
       const app = createAppWithAuth();
       const response = await app.request(`/api/v1/imports/${importId}/start`, {
         method: 'POST',

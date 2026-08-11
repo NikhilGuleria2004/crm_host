@@ -13,6 +13,7 @@ export function createImportsRoutes() {
 
   app.get('/', authorize(IMPORT_PERMISSIONS.read), controller.list);
   app.get('/:id', authorize(IMPORT_PERMISSIONS.read), controller.getById);
+  app.post('/', authorize(IMPORT_PERMISSIONS.create), controller.upload);
   app.post('/:id/preview', authorize(IMPORT_PERMISSIONS.create), controller.preview);
   app.post('/:id/start', authorize(IMPORT_PERMISSIONS.create), controller.start);
 

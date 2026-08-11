@@ -1,11 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ObjectId } from 'mongodb';
-import { ImportService } from '../src/modules/imports/imports.service';
+import { ImportService, MAX_FILE_SIZE } from '../src/modules/imports/imports.service';
 import type { ImportRepository } from '../src/modules/imports/imports.repository';
+
+vi.mock('../src/storage/mongo-file-storage', () => ({
+  fileStorage: {
+    put: vi.fn().mockResolvedValue(undefined),
+    get: vi.fn().mockResolvedValue(null),
+  },
+}));
 
 function createMockRepository(): vi.Mocked<ImportRepository> {
   return {
     findById: vi.fn(),
+    findByFileKey: vi.fn(),
     list: vi.fn(),
     create: vi.fn(),
     updateStatus: vi.fn(),
@@ -99,14 +107,18 @@ describe('P26 ImportService', () => {
   describe('createJob', () => {
     it('should create an import job', async () => {
       repository.create.mockResolvedValue(mockImportDoc);
+      repository.findByFileKey.mockResolvedValue(null);
 
-      const result = await service.createJob(orgId, userId, 'contacts', 'upload.csv', 100);
+      const result = await service.createJob(orgId, userId, 'contacts', {
+        name: 'upload.csv',
+        content: Buffer.from('First Name,Last Name,Email\nJohn,Doe,john@example.com'),
+      });
 
       expect(repository.create).toHaveBeenCalledWith({
         organizationId: orgId,
         entity: 'contacts',
-        fileKey: 'upload.csv',
-        totalRows: 100,
+        fileKey: expect.any(String),
+        totalRows: 1,
         createdBy: userId,
       });
       expect(result.entity).toBe('contacts');
@@ -140,6 +152,11 @@ describe('P26 ImportService', () => {
   describe('previewImport', () => {
     it('should return preview with headers and rows', async () => {
       repository.findById.mockResolvedValue(mockImportDoc);
+      const mockFileStorage = await import('../src/storage/mongo-file-storage');
+      mockFileStorage.fileStorage.get.mockResolvedValue({
+        content: Buffer.from('First Name,Last Name,Email\nJohn,Doe,john@example.com'),
+        contentType: 'text/csv',
+      });
 
       const result = await service.previewImport(importId, orgId, {
         firstName: 'First Name',
@@ -162,6 +179,11 @@ describe('P26 ImportService', () => {
     it('should process import and update job status', async () => {
       repository.findById.mockResolvedValue(mockImportDoc);
       repository.updateStatus.mockResolvedValue(undefined);
+      const mockFileStorage = await import('../src/storage/mongo-file-storage');
+      mockFileStorage.fileStorage.get.mockResolvedValue({
+        content: Buffer.from('First Name,Last Name,Email\nJohn,Doe,john@example.com'),
+        contentType: 'text/csv',
+      });
 
       await service.startImport(importId, orgId, { firstName: 'First Name', email: 'Email' });
 
@@ -170,7 +192,7 @@ describe('P26 ImportService', () => {
         orgId,
         expect.objectContaining({
           status: 'completed',
-          processedRows: 2,
+          processedRows: 1,
         })
       );
     });

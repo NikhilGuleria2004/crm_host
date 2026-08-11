@@ -23,3 +23,7 @@ export function generateSessionToken(): string {
 export function hashToken(token: string): string {
   return createHmac('sha256', token).digest('hex');
 }
+
+export function hashContent(content: string): string {
+  return createHmac('sha256', content).digest('hex');
+}

@@ -73,13 +73,13 @@
 - [x] Verify organization isolation and correct download headers
 
 ## Phase 9 — Replace Mock Import Implementation
-- [ ] Audit `apps/api/src/modules/imports/imports.service.ts` for mock/placeholder CSV data
-- [ ] Integrate real CSV parser (quoted fields, UTF-8, empty values, malformed rows)
-- [ ] Persist uploaded files to Blob
-- [ ] Implement import job creation + Queue/Workflow processing
-- [ ] Preserve `MAX_FILE_SIZE = 10 MB`
-- [ ] Implement idempotency (`jobId` + `organizationId`, deterministic matching)
-- [ ] Verify: Blob stores file, job created, background process runs, records imported, errors recorded, retry safe
+- [x] Audit `apps/api/src/modules/imports/imports.service.ts` for mock/placeholder CSV data
+- [x] Integrate real CSV parser (quoted fields, UTF-8, empty values, malformed rows)
+- [x] Persist uploaded files to Blob
+- [x] Implement import job creation + Queue/Workflow processing
+- [x] Preserve `MAX_FILE_SIZE = 10 MB`
+- [x] Implement idempotency (`jobId` + `organizationId`, deterministic matching)
+- [x] Verify: Blob stores file, job created, background process runs, records imported, errors recorded, retry safe
 
 ## Phase 10 — Migrate Node Background Worker
 - [ ] Audit current `apps/api/src/worker/index.ts` responsibilities

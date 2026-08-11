@@ -1,5 +1,9 @@
 import { ImportRepository } from './imports.repository';
+import { fileStorage } from '../../storage/mongo-file-storage';
+import { hashContent } from '../../utils/crypto';
 import type { ImportJobResponse, ImportListResponse, ImportListQuery, ImportRowResult, ImportPreviewResponse } from './imports.types';
+
+export const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
 export class ImportService {
   constructor(private repository: ImportRepository) {}
@@ -32,7 +36,23 @@ export class ImportService {
     return this.repository.toResponse(doc);
   }
 
-  async createJob(organizationId: string, userId: string, entity: string, fileKey: string, totalRows: number): Promise<ImportJobResponse> {
+  async createJob(organizationId: string, userId: string, entity: string, file: { name: string; content: Buffer }): Promise<ImportJobResponse> {
+    if (file.content.length > MAX_FILE_SIZE) {
+      throw new Error(`File size exceeds maximum allowed size of ${MAX_FILE_SIZE / 1024 / 1024} MB`);
+    }
+
+    const content = file.content.toString('utf-8');
+    const contentHash = hashContent(content);
+    const fileKey = `imports/${organizationId}/${entity}/${contentHash}.csv`;
+
+    const existing = await this.repository.findByFileKey(fileKey, organizationId);
+    if (existing) {
+      return this.repository.toResponse(existing);
+    }
+
+    const { rows } = this.parseCSV(content);
+    const totalRows = rows.length;
+
     const doc = await this.repository.create({
       organizationId,
       entity,
@@ -40,6 +60,9 @@ export class ImportService {
       totalRows,
       createdBy: userId,
     });
+
+    await fileStorage.put(fileKey, file.content, 'text/csv');
+
     return this.repository.toResponse(doc);
   }
 
@@ -49,10 +72,12 @@ export class ImportService {
       throw new Error('Import job not found');
     }
 
-    const content = `First Name,Last Name,Email,Phone,Company
-John,Doe,john@example.com,1234567890,Acme
-Jane,Smith,jane@example.com,0987654321,Globex`;
+    const file = await fileStorage.get(job.fileKey);
+    if (!file) {
+      throw new Error('Import file not found');
+    }
 
+    const content = file.content.toString('utf-8');
     const { headers, rows } = this.parseCSV(content);
     const errors: Array<{ row: number; message: string }> = [];
 
@@ -92,10 +117,12 @@ Jane,Smith,jane@example.com,0987654321,Globex`;
       failedCount: 0,
     });
 
-    const content = `First Name,Last Name,Email,Phone,Company
-John,Doe,john@example.com,1234567890,Acme
-Jane,Smith,jane@example.com,0987654321,Globex`;
+    const file = await fileStorage.get(job.fileKey);
+    if (!file) {
+      throw new Error('Import file not found');
+    }
 
+    const content = file.content.toString('utf-8');
     const { rows } = this.parseCSV(content);
     const results = await this.processImport(jobId, organizationId, rows, mapping);
 
@@ -190,7 +217,7 @@ Jane,Smith,jane@example.com,0987654321,Globex`;
       const values = this.parseCSVLine(lines[i]);
       const row: Record<string, unknown> = {};
       headers.forEach((header, index) => {
-        row[header] = values[index] || '';
+        row[header] = values[index] !== undefined ? values[index] : '';
       });
       rows.push(row);
     }
@@ -213,13 +240,13 @@ Jane,Smith,jane@example.com,0987654321,Globex`;
           inQuotes = !inQuotes;
         }
       } else if (char === ',' && !inQuotes) {
-        result.push(current.trim());
+        result.push(current);
         current = '';
       } else {
         current += char;
       }
     }
-    result.push(current.trim());
+    result.push(current);
     return result;
   }
 }

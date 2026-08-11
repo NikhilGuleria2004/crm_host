@@ -12,6 +12,14 @@ export class ImportRepository {
     return doc as ImportJobDocument | null;
   }
 
+  async findByFileKey(fileKey: string, organizationId: string): Promise<ImportJobDocument | null> {
+    const doc = await collections.importJobs().findOne({
+      fileKey,
+      organizationId: new ObjectId(organizationId),
+    });
+    return doc as ImportJobDocument | null;
+  }
+
   async list(organizationId: string, params: ImportListParams): Promise<{ data: ImportJobDocument[]; nextCursor: string | null; hasMore: boolean }> {
     const query: Record<string, unknown> = {
       organizationId: new ObjectId(organizationId),

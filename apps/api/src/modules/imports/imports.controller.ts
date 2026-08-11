@@ -44,6 +44,41 @@ export function createImportsController(service: ImportService) {
       return c.json({ data: job });
     },
 
+    async upload(c: any) {
+      try {
+        const organizationId = c.get('organizationId');
+        const user = c.get('user');
+        if (!organizationId || !user) {
+          return c.json({ error: { code: 'ORGANIZATION_CONTEXT_REQUIRED', message: 'Organization context required' } }, 400);
+        }
+
+        const formData = await c.req.formData();
+        const entity = formData.get('entity');
+        const file = formData.get('file');
+
+        if (!entity || typeof entity !== 'string') {
+          return c.json({ error: { code: 'VALIDATION_ERROR', message: 'Entity is required' } }, 400);
+        }
+
+        if (!file || !(file instanceof File)) {
+          return c.json({ error: { code: 'VALIDATION_ERROR', message: 'File is required' } }, 400);
+        }
+
+        const content = Buffer.from(await file.arrayBuffer());
+        const job = await service.createJob(organizationId, user.id, entity, {
+          name: file.name,
+          content,
+        });
+
+        return c.json({ data: job }, 201);
+      } catch (error) {
+        if (error instanceof Error) {
+          return c.json({ error: { code: 'VALIDATION_ERROR', message: error.message } }, 400);
+        }
+        return c.json({ error: { code: 'INTERNAL_ERROR', message: 'Failed to create import job' } }, 500);
+      }
+    },
+
     async preview(c: any) {
       try {
         const organizationId = c.get('organizationId');
