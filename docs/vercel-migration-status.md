@@ -105,6 +105,66 @@ index.ts   -> Re-exports node.ts for backward compatibility
 
 ---
 
+## Phase 3 — Environment Variables and Secrets
+
+**Status:** Complete  
+**Commit:** (pending)
+
+### Audit Results
+
+All environment variables are centralized in `apps/api/src/config/env.ts` using Zod validation. No integration-specific env vars were found; integration credentials are stored in the database.
+
+**Required env vars:**
+| Variable | Default | Required | Description |
+|----------|---------|----------|-------------|
+| `NODE_ENV` | `development` | No | Environment mode |
+| `PORT` | `3000` | No | Local dev server port (Vercel ignores this) |
+| `MONGODB_URI` | — | **Yes** | MongoDB connection string |
+| `MONGODB_DATABASE` | `crm` | No | Database name |
+| `SESSION_SECRET` | — | **Yes** | Session signing secret (min 32 chars) |
+| `COOKIE_DOMAIN` | `localhost` | No | Cookie domain |
+| `CORS_ORIGIN` | `http://localhost:5173` | No | Allowed CORS origin |
+
+### Changes
+
+1. **`apps/api/.env.example`** — Updated with placeholders and documentation comments:
+   ```
+   # Environment
+   NODE_ENV=development
+   PORT=3000
+
+   # MongoDB
+   MONGODB_URI=mongodb://localhost:27017/crm
+   MONGODB_DATABASE=crm
+
+   # Security
+   SESSION_SECRET=replace-with-at-least-32-random-chars
+   COOKIE_DOMAIN=localhost
+   CORS_ORIGIN=http://localhost:5173
+   ```
+
+2. **`.gitignore`** — Already contains `.env` and `.env.*` patterns (with `!.env.example` exception).
+
+3. **Vercel project** — `nikhil-gulerias-projects/api` created in Phase 2. Environment variables must be configured through the Vercel dashboard or CLI:
+   - Development: local MongoDB, `http://localhost:5173`
+   - Preview: staging MongoDB, preview frontend URL
+   - Production: production MongoDB, production frontend URL
+
+### Verification
+
+| Check | Result |
+|-------|--------|
+| No secrets in source control | Pass — `.env` is gitignored; no hardcoded credentials found in source |
+| `.env.example` exists | Pass — `apps/api/.env.example` with placeholders |
+| Env validation | Pass — Zod schema validates all required vars at startup |
+
+### Known Limitations
+
+- Vercel dashboard env vars not yet configured (requires manual setup or Vercel CLI auth with token).
+- `MONGODB_URI` currently points to local MongoDB in `.env`; production Atlas URI must be added separately.
+
+---
+
 ## Next Phase
 
-**Phase 3:** Environment Variables and Secrets
+**Phase 4:** MongoDB Connection Management

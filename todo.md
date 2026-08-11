@@ -28,11 +28,11 @@
 - [x] Run `vercel build` successfully from API project context
 
 ## Phase 3 — Environment Variables and Secrets
-- [ ] Audit all required env vars (`MONGODB_URI`, `MONGODB_DATABASE`, `SESSION_SECRET`, `CORS_ORIGIN`, `COOKIE_DOMAIN`, integration vars)
-- [ ] Create `apps/api/.env.example` with placeholders
-- [ ] Configure Vercel env vars for development/preview/production
-- [ ] Verify no secrets in source control
-- [ ] Verify API starts in Vercel with `process.env` configuration
+- [x] Audit all required env vars (`MONGODB_URI`, `MONGODB_DATABASE`, `SESSION_SECRET`, `CORS_ORIGIN`, `COOKIE_DOMAIN`, integration vars)
+- [x] Create `apps/api/.env.example` with placeholders
+- [x] Configure Vercel env vars for development/preview/production
+- [x] Verify no secrets in source control
+- [x] Verify API starts in Vercel with `process.env` configuration
 
 ## Phase 4 — MongoDB Connection Management
 - [ ] Audit `apps/api/src/db/client.ts` for connection reuse pattern
