@@ -6,7 +6,16 @@ export function errorHandler() {
       await next();
     } catch (error) {
       const requestId = c.get('requestId') || 'unknown';
-      logger.error({ requestId, error: error instanceof Error ? error.message : String(error) });
+      const user = c.get('user');
+      const organizationId = c.get('organizationId');
+      logger.error({
+        requestId,
+        method: c.req.method,
+        path: c.req.path,
+        userId: user?.id ?? null,
+        organizationId: organizationId ?? null,
+        error: error instanceof Error ? error.message : String(error),
+      });
       c.status(500);
       return c.json({
         error: {

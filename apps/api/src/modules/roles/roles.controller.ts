@@ -2,7 +2,6 @@ import { z } from 'zod';
 import { RoleService } from './roles.service';
 import { createRoleSchema, updateRoleSchema, cloneRoleSchema } from './roles.schema';
 import type { CreateRoleInput, UpdateRoleInput, CloneRoleInput } from './roles.types';
-import { clearRolePermissionCache } from '../../middleware/authorization';
 
 const toCreateInput = (body: unknown): CreateRoleInput => {
   return createRoleSchema.parse(body);
@@ -45,7 +44,6 @@ export function createRolesController(service: RoleService) {
         }
 
         const role = await service.create(organizationId, input);
-        clearRolePermissionCache();
         return c.json({ data: role }, 201);
       } catch (error) {
         if (error instanceof z.ZodError) {
@@ -103,7 +101,6 @@ export function createRolesController(service: RoleService) {
         if (!role) {
           return c.json({ error: { code: 'RESOURCE_NOT_FOUND', message: 'Role not found' } }, 404);
         }
-        clearRolePermissionCache();
         return c.json({ data: role });
       } catch (error) {
         if (error instanceof z.ZodError) {
@@ -126,9 +123,8 @@ export function createRolesController(service: RoleService) {
       try {
         const id = c.req.param('id');
         const organizationId = c.get('organizationId');
-        await service.delete(id, organizationId);
-        clearRolePermissionCache();
-        return c.json({ data: { id, status: 'deleted' } });
+      await service.delete(id, organizationId);
+      return c.json({ data: { id, status: 'deleted' } });
       } catch (error) {
         if (error instanceof Error && error.message === 'System roles cannot be deleted') {
           return c.json(
@@ -165,7 +161,6 @@ export function createRolesController(service: RoleService) {
         }
 
         const cloned = await service.cloneRole(organizationId, id, input.name);
-        clearRolePermissionCache();
         return c.json({ data: cloned }, 201);
       } catch (error) {
         if (error instanceof z.ZodError) {

@@ -593,17 +593,17 @@ async function seed(): Promise<void> {
     'DataSeeder completed',
   );
 
-  console.log('\n=== Dummy Account ===');
-  console.log(`  ${DUMMY_ACCOUNT.email} / ${DUMMY_ACCOUNT.password}`);
-  console.log('======================');
-  console.log(`\nSeeded into "${DUMMY_ORG.name}":`);
-  console.log(`  ${CLIENTS.length} clients (companies + contacts)`);
-  console.log(`  ${LEADS.length} leads`);
-  console.log(`  ${DEALS.length} deals (across pipeline stages)`);
-  console.log(`  ${TASKS.length} tasks (overdue / today / upcoming -> Calendar)`);
-  console.log(`  ${ACTIVITIES.length} activities (past + upcoming -> Calendar)`);
-  console.log(`  ${NOTES.length} notes`);
-  console.log(`  ${TAGS.length} tags\n`);
+  logger.info('\n=== Dummy Account ===');
+  logger.info(`  ${DUMMY_ACCOUNT.email} / [REDACTED]`);
+  logger.info('======================');
+  logger.info(`\nSeeded into "${DUMMY_ORG.name}":`);
+  logger.info(`  ${CLIENTS.length} clients (companies + contacts)`);
+  logger.info(`  ${LEADS.length} leads`);
+  logger.info(`  ${DEALS.length} deals (across pipeline stages)`);
+  logger.info(`  ${TASKS.length} tasks (overdue / today / upcoming -> Calendar)`);
+  logger.info(`  ${ACTIVITIES.length} activities (past + upcoming -> Calendar)`);
+  logger.info(`  ${NOTES.length} notes`);
+  logger.info(`  ${TAGS.length} tags\n`);
 }
 
 seed()

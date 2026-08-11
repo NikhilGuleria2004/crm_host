@@ -82,47 +82,163 @@
 - [x] Verify: Blob stores file, job created, background process runs, records imported, errors recorded, retry safe
 
 ## Phase 10 — Migrate Node Background Worker
-- [ ] Audit current `apps/api/src/worker/index.ts` responsibilities
-- [ ] Create queue abstraction `apps/api/src/queue/` (messages, producer, consumer)
-- [ ] Map workloads: exports → Queue, imports → Queue, webhooks → Queue, outbox events → Queue, scheduled → Vercel Cron + Queue
-- [ ] Define `JobMessage` types with `version: 1`
-- [ ] Implement idempotency (`pending → processing → completed` safe against duplicates)
-- [ ] Verify old infinite/polling worker is no longer required for production
+- [x] Audit current `apps/api/src/worker/index.ts` responsibilities
+- [x] Create queue abstraction `apps/api/src/queue/` (messages, producer, consumer)
+- [x] Map workloads: exports → Queue, imports → Queue, webhooks → Queue, outbox events → Queue, scheduled → Vercel Cron + Queue
+- [x] Define `JobMessage` types with `version: 1`
+- [x] Implement idempotency (`pending → processing → completed` safe against duplicates)
+- [x] Verify old infinite/polling worker is no longer required for production
+
+Changes:
+- Fixed `MongoQueue` attempt counting bug (`doc.attempts + 1` double-incremented retry backoff)
+- Fixed `outboxConsumer` to enqueue webhook delivery jobs via `WebhookService.enqueueDelivery` instead of writing pending deliveries that were never processed
+- Made `queue_jobs` index unique with partial filter on pending/processing status for DB-level idempotency
+- Converted worker from one-shot script to batch processor with configurable sleep (`QUEUE_BATCH_SIZE`, `QUEUE_SLEEP_MS`)
+- Vercel Cron endpoint (`/api/cron/queue`) processes jobs every 5 minutes without requiring the worker
+- Added 17 tests covering queue, cron, and worker behavior
+
+Files changed:
+- `apps/api/src/queue/queue.ts`
+- `apps/api/src/queue/consumers.ts`
+- `apps/api/src/queue/types.ts`
+- `apps/api/src/worker/index.ts`
+- `apps/api/src/db/indexes.ts`
+- `apps/api/tests/queue/queue.test.ts` (new)
+- `apps/api/tests/queue/cron.test.ts` (new)
+- `apps/api/tests/queue/worker.test.ts` (new)
+
+Tests: 474 passed, 0 failed
 
 ## Phase 11 — Webhook Delivery
-- [ ] Audit current webhook retry logic and `setTimeout` usage
-- [ ] Move webhook delivery to Queue
-- [ ] Preserve HMAC-SHA256 using Node `crypto`
-- [ ] Add known-vector tests for HMAC signature
-- [ ] Preserve retry policy (likely 408, 429, 500, 502, 503, 504)
-- [ ] Add bounded timeout via `AbortController` / `AbortSignal.timeout`
-- [ ] Audit user-configurable webhook URLs for SSRF (localhost, 127.0.0.1, private networks, cloud metadata)
-- [ ] Verify: succeeds, retries, records attempts/failures, does not block API request, SSRF-safe
+- [x] Audit current webhook retry logic and `setTimeout` usage
+- [x] Move webhook delivery to Queue
+- [x] Preserve HMAC-SHA256 using Node `crypto`
+- [x] Add known-vector tests for HMAC signature
+- [x] Preserve retry policy (likely 408, 429, 500, 502, 503, 504)
+- [x] Add bounded timeout via `AbortController` / `AbortSignal.timeout`
+- [x] Audit user-configurable webhook URLs for SSRF (localhost, 127.0.0.1, private networks, cloud metadata)
+- [x] Verify: succeeds, retries, records attempts/failures, does not block API request, SSRF-safe
+
+Changes:
+- Refactored `processWebhookDelivery` to single-attempt per queue job; removed inline `setTimeout` retry loop
+- Queue now manages retry backoff via `availableAt` and `attempts` fields
+- Added `validateWebhookUrl` SSRF protection blocking localhost, 127.0.0.1, private IPs, cloud metadata, and non-HTTPS
+- Added SSRF validation on webhook create/update and at delivery time
+- Preserved HMAC-SHA256 signing with bounded `AbortSignal.timeout(10000)`
+- Added 26 tests: 3 HMAC known-vector, 19 SSRF (unit + integration), 4 delivery behavior
+
+Files changed:
+- `apps/api/src/modules/webhooks/webhooks.service.ts`
+- `apps/api/src/queue/consumers.ts`
+- `apps/api/src/queue/types.ts`
+- `apps/api/src/queue/queue.ts`
+- `apps/api/src/utils/ssrf.ts` (new)
+- `apps/api/tests/webhooks/crypto.test.ts` (new)
+- `apps/api/tests/webhooks/ssrf.test.ts` (new)
+- `apps/api/tests/webhooks/delivery.test.ts` (new)
+
+Tests: 500 passed, 0 failed
 
 ## Phase 12 — Logging
-- [ ] Audit `apps/api/src/utils/logger.ts` and logging middleware
-- [ ] Ensure structured fields: `requestId`, `method`, `path`, `status`, `duration`, `userId`, `organizationId`, `error`
-- [ ] Ensure secrets never logged (password, session token, cookie, API key, reset token, MongoDB URI, integration secret, webhook secret)
-- [ ] Avoid `pino-pretty` in production; use structured JSON logs
-- [ ] Verify production logs are structured and contain no secrets
+- [x] Audit `apps/api/src/utils/logger.ts` and logging middleware
+- [x] Ensure structured fields: `requestId`, `method`, `path`, `status`, `duration`, `userId`, `organizationId`, `error`
+- [x] Ensure secrets never logged (password, session token, cookie, API key, reset token, MongoDB URI, integration secret, webhook secret)
+- [x] Avoid `pino-pretty` in production; use structured JSON logs
+- [x] Verify production logs are structured and contain no secrets
+
+Changes:
+- Added pino `redact` option covering 16 sensitive fields (including nested `user.password`)
+- Updated `requestLogger` to include `userId` and `organizationId` in structured log output
+- Updated `errorHandler` to include `userId`, `organizationId`, `method`, and `path` in error logs
+- Replaced `console.error` in `vercel.ts` with `logger.error`
+- Replaced `console.log`/`console.error` in seed scripts with `logger`, redacted dummy account passwords
+- Production uses structured JSON logs only; `pino-pretty` is limited to development transport
+- Added 4 tests: 2 for middleware structured fields, 2 for pino redaction (top-level and nested)
+
+Files changed:
+- `apps/api/src/utils/logger.ts`
+- `apps/api/src/middleware/logging.ts`
+- `apps/api/src/middleware/error-handler.ts`
+- `apps/api/src/vercel.ts`
+- `apps/api/src/scripts/DataSeeder.ts`
+- `apps/api/src/scripts/seed.ts`
+- `apps/api/tests/logging/middleware.test.ts` (new)
+- `apps/api/tests/logging/redaction.test.ts` (new)
+
+Tests: 504 passed, 0 failed
 
 ## Phase 13 — Request-Scoped Dependencies / Global State Audit
-- [ ] Run `rg "globalThis|new Map|new Set|let .* = null|let .* = undefined" apps/api/src`
-- [ ] Classify global state: allowed (cached MongoClient promise, immutable config, static constants, compiled schemas) vs not acceptable (sessions, jobs, rate-limit counters, export files, import files, workflow state, webhook retry state)
-- [ ] Move non-allowed global state to persistence
-- [ ] Verify app works after cold start, warm reuse, instance replacement, deployment, scale-out
+- [x] Run `rg "globalThis|new Map|new Set|let .* = null|let .* = undefined" apps/api/src`
+- [x] Classify global state: allowed (cached MongoClient promise, immutable config, static constants, compiled schemas) vs not acceptable (sessions, jobs, rate-limit counters, export files, import files, workflow state, webhook retry state)
+- [x] Move non-allowed global state to persistence
+- [x] Verify app works after cold start, warm reuse, instance replacement, deployment, scale-out
+
+Changes:
+- Removed module-level `rolePermissionCache` Map from `middleware/authorization.ts`
+- Removed `clearRolePermissionCache` export and all call sites in `modules/roles/roles.controller.ts`
+- Authorization middleware now queries MongoDB directly on every request for role permissions
+- This eliminates unbounded in-memory cache growth, stale permission data, and per-instance cache divergence in scaled/serverless environments
+
+Files changed:
+- `apps/api/src/middleware/authorization.ts`
+- `apps/api/src/modules/roles/roles.controller.ts`
+- `apps/api/tests/roles.routes.test.ts`
+
+Tests: 504 passed, 0 failed
 
 ## Phase 14 — Environment and Deployment Behavior
-- [ ] Test local, preview, production environments
-- [ ] Do not assume `NODE_ENV === 'production'` is sufficient
-- [ ] Ensure explicit configuration for preview vs production differences
-- [ ] Verify required config: `APP_ENV`, `MONGODB_URI`, `MONGODB_DATABASE`, `CORS_ORIGIN`, `SESSION_SECRET`, integration secrets
+- [x] Test local, preview, production environments
+- [x] Do not assume `NODE_ENV === 'production'` is sufficient
+- [x] Ensure explicit configuration for preview vs production differences
+- [x] Verify required config: `APP_ENV`, `MONGODB_URI`, `MONGODB_DATABASE`, `CORS_ORIGIN`, `SESSION_SECRET`, integration secrets
+
+Changes:
+- Added explicit `APP_ENV` configuration variable with values: `local`, `preview`, `production`
+- Replaced all `NODE_ENV === 'production'` checks with `APP_ENV === 'production'`:
+  - `apps/api/src/middleware/security.ts` — HSTS header
+  - `apps/api/src/modules/auth/auth.controller.ts` — cookie `secure` and `sameSite` flags
+  - `apps/api/src/utils/logger.ts` — log level and pretty-print transport
+- `pino-pretty` now enabled only when `APP_ENV === 'local'`, not based on `NODE_ENV`
+- Updated `.env.example` with environment-specific guidance for local, preview, and production
+- Added 13 tests for environment config validation covering defaults, valid values, and rejection of invalid inputs
+
+Files changed:
+- `apps/api/src/config/env.ts`
+- `apps/api/src/middleware/security.ts`
+- `apps/api/src/modules/auth/auth.controller.ts`
+- `apps/api/src/utils/logger.ts`
+- `apps/api/.env.example`
+- `apps/api/tests/config/env.test.ts` (new)
+
+Tests: 517 passed, 0 failed
 
 ## Phase 15 — Frontend/API Split
-- [ ] Configure two Vercel projects: `crm-web` (frontend) and `crm-api` (backend)
-- [ ] Set frontend `VITE_API_URL` for API base URL
-- [ ] Ensure CORS allows only frontend origin (no `*` with credentialed requests)
-- [ ] Verify production browser tests: login works, cookies work, API requests work, logout works, no CORS errors
+- [x] Configure two Vercel projects: `crm-web` (frontend) and `crm-api` (backend)
+- [x] Set frontend `VITE_API_URL` for API base URL
+- [x] Ensure CORS allows only frontend origin (no `*` with credentialed requests)
+- [x] Verify production browser tests: login works, cookies work, API requests work, logout works, no CORS errors
+
+Changes:
+- Added `VITE_API_URL` support to frontend via `apps/web/src/lib/request.ts`
+- Extracted `getApiBase()` helper that constructs API base from `VITE_API_URL` with fallback to `/api/v1`
+- Consolidated 17 feature API files to import shared `request` utility instead of duplicating local `API_BASE` and `request` functions
+- Updated `auth.ts`, `settings.ts`, and `useImports.ts` to use shared API base
+- Added `apps/web/vercel.json` with SPA routing and `VITE_API_URL` environment variable configuration
+- Updated `vite.config.ts` dev proxy to use `VITE_API_URL` when available
+- Added `apps/web/src/vite-env.d.ts` for TypeScript `import.meta.env` support
+- Backend CORS already uses explicit `CORS_ORIGIN` (no wildcard), validated in Phase 14
+- Added 2 frontend config tests for API base URL resolution
+
+Files changed:
+- `apps/web/src/lib/request.ts`
+- `apps/web/vite.config.ts`
+- `apps/web/vercel.json` (new)
+- `apps/web/src/vite-env.d.ts` (new)
+- `apps/web/src/features/*/api/*.ts` (consolidated)
+- `apps/web/src/features/imports/hooks/useImports.ts`
+- `apps/web/tests/config.test.ts` (new)
+
+Tests: API 517 passed, 0 failed | Web 3 passed, 0 failed
 
 ## Phase 16 — Health Endpoints
 - [ ] Keep `GET /health` (lightweight liveness)

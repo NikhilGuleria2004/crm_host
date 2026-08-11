@@ -171,7 +171,10 @@ export async function bootstrapIndexes(): Promise<void> {
 
   const queueJobs = db.collection('queue_jobs');
   await queueJobs.createIndex({ status: 1, availableAt: 1 });
-  await queueJobs.createIndex({ type: 1, 'payload.jobId': 1 });
+  await queueJobs.createIndex(
+    { type: 1, 'payload.jobId': 1 },
+    { unique: true, partialFilterExpression: { status: { $in: ['pending', 'processing'] } } }
+  );
 
   logger.info('Indexes bootstrapped successfully');
 }

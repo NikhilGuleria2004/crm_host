@@ -12,15 +12,15 @@ export function createWebhookConsumer(): QueueConsumer {
 
   return {
     type: 'webhook',
-    async process(payload) {
-      return service.processWebhookDelivery(payload);
+    async process(payload, attempts) {
+      return service.processWebhookDelivery(payload, attempts);
     },
   };
 }
 
 export const exportConsumer: QueueConsumer = {
   type: 'export',
-  async process(payload) {
+  async process(payload, _attempts) {
     try {
       const jobId = payload.jobId as string;
       const fields = payload.fields as string[];
@@ -78,7 +78,7 @@ export const exportConsumer: QueueConsumer = {
 
 export const importConsumer: QueueConsumer = {
   type: 'import',
-  async process(payload) {
+  async process(payload, _attempts) {
     try {
       const jobId = payload.jobId as string;
       const fileKey = payload.fileKey as string;
@@ -138,44 +138,20 @@ export const importConsumer: QueueConsumer = {
 
 export const outboxConsumer: QueueConsumer = {
   type: 'outbox',
-  async process(payload) {
+  async process(payload, _attempts) {
     try {
-      const eventId = payload.jobId as string;
       const eventType = payload.type as string;
       const eventPayload = payload.payload as Record<string, unknown>;
-
-      const objectId = new ObjectId(eventId.replace('lead.converted:', ''));
-      const result = await collections.outboxEvents().updateOne(
-        { _id: objectId },
-        { $set: { status: 'processing', processedAt: new Date() } }
-      );
-
-      if (result.matchedCount === 0) {
-        return { success: true };
-      }
-
       const organizationId = payload.organizationId as string;
+
       const webhooks = await collections.webhooks()
         .find({ organizationId: new ObjectId(organizationId), status: 'active', events: eventType })
         .toArray();
 
+      const webhookService = new WebhookService(new WebhookRepository());
       for (const webhook of webhooks) {
-        await collections.webhookDeliveries().insertOne({
-          webhookId: webhook._id,
-          organizationId: new ObjectId(organizationId),
-          eventId,
-          eventType,
-          payload: eventPayload,
-          attempt: 0,
-          status: 'pending',
-          createdAt: new Date(),
-        } as any);
+        await webhookService.enqueueDelivery(webhook._id.toHexString(), organizationId, eventType, eventPayload);
       }
-
-      await collections.outboxEvents().updateOne(
-        { _id: objectId },
-        { $set: { status: 'completed', processedAt: new Date() } }
-      );
 
       return { success: true };
     } catch (error) {

@@ -5,6 +5,7 @@ config();
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  APP_ENV: z.enum(['local', 'preview', 'production']).default('local'),
   PORT: z.coerce.number().default(3000),
   MONGODB_URI: z.string().url(),
   MONGODB_DATABASE: z.string().default('crm'),
@@ -15,6 +16,7 @@ const envSchema = z.object({
 
 export const env = envSchema.parse({
   NODE_ENV: process.env.NODE_ENV,
+  APP_ENV: process.env.APP_ENV,
   PORT: process.env.PORT,
   MONGODB_URI: process.env.MONGODB_URI,
   MONGODB_DATABASE: process.env.MONGODB_DATABASE,

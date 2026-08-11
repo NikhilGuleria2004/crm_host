@@ -37,7 +37,7 @@ function serializeCookie(name: string, value: string, options: Record<string, un
 }
 
 function getCookieOptions() {
-  const isProduction = env.NODE_ENV === 'production';
+  const isProduction = env.APP_ENV === 'production';
   return {
     httpOnly: true,
     secure: isProduction,

@@ -1,26 +1,6 @@
-const API_BASE = '/api/v1';
+import { API_BASE, request } from '../../../lib/request';
 
-async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${endpoint}`, {
-    ...options,
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: { message: 'An error occurred' } }));
-    throw new Error(error.error?.message || 'An error occurred');
-  }
-
-  if (response.status === 204) {
-    return undefined as T;
-  }
-
-  return response.json();
-}
+export { API_BASE };
 
 export interface ImportJobResponse {
   id: string;

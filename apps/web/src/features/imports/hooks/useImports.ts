@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { importsApi } from '../api/imports';
+import { importsApi, API_BASE } from '../api/imports';
 
 export function useImportJobs(params?: { limit?: number; cursor?: string; entity?: string; status?: string }) {
   return useQuery({
@@ -44,7 +44,7 @@ export function useCreateImport() {
       formData.append('entity', entity);
       formData.append('file', file);
 
-      const response = await fetch('/api/v1/imports', {
+      const response = await fetch(`${API_BASE}/imports`, {
         method: 'POST',
         credentials: 'include',
         body: formData,

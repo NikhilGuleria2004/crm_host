@@ -73,7 +73,7 @@ export class MongoQueue {
         throw new Error(`No consumer registered for job type: ${doc.type}`);
       }
 
-      const result = await consumer.process(doc.payload);
+      const result = await consumer.process(doc.payload, doc.attempts);
 
       if (result.success) {
         await collections.queueJobs().updateOne(
@@ -81,8 +81,7 @@ export class MongoQueue {
           { $set: { status: 'completed', updatedAt: new Date() } }
         );
       } else {
-        const newAttempts = doc.attempts + 1;
-        const shouldRetry = newAttempts < doc.maxAttempts;
+        const shouldRetry = doc.attempts < doc.maxAttempts;
         
         await collections.queueJobs().updateOne(
           { _id: doc._id },
@@ -90,28 +89,27 @@ export class MongoQueue {
             $set: {
               status: shouldRetry ? 'pending' : 'failed',
               lastError: result.error,
-              availableAt: shouldRetry ? new Date(Date.now() + 5000 * newAttempts) : new Date(),
+              availableAt: shouldRetry ? new Date(Date.now() + 5000 * doc.attempts) : new Date(),
               updatedAt: new Date(),
             },
           }
         );
       }
     } catch (error) {
-      const newAttempts = doc.attempts + 1;
-      const shouldRetry = newAttempts < doc.maxAttempts;
+      const shouldRetry = doc.attempts < doc.maxAttempts;
       const errorMessage = error instanceof Error ? error.message : String(error);
 
-      await collections.queueJobs().updateOne(
-        { _id: doc._id },
-        {
-          $set: {
-            status: shouldRetry ? 'pending' : 'failed',
-            lastError: errorMessage,
-            availableAt: shouldRetry ? new Date(Date.now() + 5000 * newAttempts) : new Date(),
-            updatedAt: new Date(),
-          },
-        }
-      );
+        await collections.queueJobs().updateOne(
+          { _id: doc._id },
+          {
+            $set: {
+              status: shouldRetry ? 'pending' : 'failed',
+              lastError: errorMessage,
+              availableAt: shouldRetry ? new Date(Date.now() + 5000 * doc.attempts) : new Date(),
+              updatedAt: new Date(),
+            },
+          }
+        );
     }
 
     return true;

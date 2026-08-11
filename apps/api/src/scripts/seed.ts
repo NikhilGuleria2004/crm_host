@@ -474,11 +474,11 @@ async function seed() {
     }
 
     logger.info({ org: 'Acme Corporation', users: DEMO_USERS.length, companies: COMPANIES.length, contacts: CONTACTS.length, leads: LEADS.length, deals: DEALS.length }, 'Seed completed');
-    console.log('\n=== Demo Accounts ===');
+    logger.info('\n=== Demo Accounts ===');
     for (const u of DEMO_USERS) {
-      console.log(`  ${u.email} / ${u.password} (${u.roleKey})`);
+      logger.info(`  ${u.email} / [REDACTED] (${u.roleKey})`);
     }
-    console.log('=====================\n');
+    logger.info('=====================\n');
     process.exit(0);
   } catch (error) {
     logger.error({ error: error instanceof Error ? error.message : String(error) }, 'Seed failed');

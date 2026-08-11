@@ -28,5 +28,5 @@ export interface QueueJob {
 
 export interface QueueConsumer {
   type: JobType;
-  process: (payload: Record<string, unknown>) => Promise<JobResult>;
+  process: (payload: Record<string, unknown>, attempts: number) => Promise<JobResult>;
 }

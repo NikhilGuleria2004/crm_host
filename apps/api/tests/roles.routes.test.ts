@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ObjectId } from 'mongodb';
 import { Hono } from 'hono';
 import { createRolesRoutes } from '../src/modules/roles/roles.routes';
-import { clearRolePermissionCache } from '../src/middleware/authorization';
 
 function createMockCollection() {
   return {
@@ -193,7 +192,6 @@ function createAppWithAuth(overrides: any = {}) {
 
 describe('P33 Roles Routes', () => {
   beforeEach(() => {
-    clearRolePermissionCache();
     vi.clearAllMocks();
     setupStores();
     setupRoleMocks();

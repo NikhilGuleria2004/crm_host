@@ -1,6 +1,11 @@
 import { triggerSessionExpired } from './session';
 
-const API_BASE = '/api/v1';
+export function getApiBase(): string {
+  const base = (import.meta.env?.VITE_API_URL as string | undefined) || '';
+  return `${base.replace(/\/$/, '')}/api/v1`;
+}
+
+export const API_BASE = getApiBase();
 
 const AUTH_LOGIN_ENDPOINTS = ['/auth/login', '/auth/logout', '/auth/me', '/auth/forgot-password', '/auth/reset-password'];
 

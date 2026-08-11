@@ -6,12 +6,6 @@ interface PermissionAssignment {
   scope: 'NONE' | 'OWN' | 'TEAM' | 'ORGANIZATION' | 'GLOBAL';
 }
 
-const rolePermissionCache = new Map<string, PermissionAssignment[]>();
-
-export function clearRolePermissionCache(): void {
-  rolePermissionCache.clear();
-}
-
 export function authorize(requiredPermission: string) {
   return async (c: any, next: any): Promise<void | Response> => {
     const user = c.get('user');
@@ -37,40 +31,29 @@ export function authorize(requiredPermission: string) {
       );
     }
 
-    // Owner wildcard
     if (requiredPermission === '*') {
       c.set('permissions', [{ permission: '*', scope: 'GLOBAL' }]);
       return next();
     }
 
-    // Use pre-computed permissions (e.g. from API key auth) if available
     let assignments: PermissionAssignment[] = c.get('permissions') || [];
     if (assignments.length === 0) {
-      const cacheKey = user.roleIds.sort().join(',');
-      const cached = rolePermissionCache.get(cacheKey);
-      if (cached) {
-        assignments = cached;
-      } else {
-        const rolePermissions = await collections.rolePermissions().find({
-          roleId: { $in: user.roleIds.map((id: string) => new ObjectId(id)) },
-        }).toArray();
+      const rolePermissions = await collections.rolePermissions().find({
+        roleId: { $in: user.roleIds.map((id: string) => new ObjectId(id)) },
+      }).toArray();
 
-        assignments = rolePermissions.map((rp) => ({
-          permission: rp.permission,
-          scope: rp.scope,
-        }));
-        rolePermissionCache.set(cacheKey, assignments);
-      }
+      assignments = rolePermissions.map((rp) => ({
+        permission: rp.permission,
+        scope: rp.scope,
+      }));
     }
 
-    // Check exact permission
     const exactMatch = assignments.find((a) => a.permission === requiredPermission);
     if (exactMatch) {
       c.set('permissions', [exactMatch]);
       return next();
     }
 
-    // Check resource wildcard (e.g., users.* for users.read)
     const [resource] = requiredPermission.split('.');
     const wildcardMatch = assignments.find((a) => a.permission === `${resource}.*`);
     if (wildcardMatch) {
@@ -78,7 +61,6 @@ export function authorize(requiredPermission: string) {
       return next();
     }
 
-    // Check global wildcard
     const globalMatch = assignments.find((a) => a.permission === '*');
     if (globalMatch) {
       c.set('permissions', [globalMatch]);
