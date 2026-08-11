@@ -163,5 +163,8 @@ export async function bootstrapIndexes(): Promise<void> {
   await rolePermissions.createIndex({ organizationId: 1, permission: 1 });
   await rolePermissions.createIndex({ organizationId: 1, roleId: 1 });
 
+  const rateLimits = db.collection('rate_limits');
+  await rateLimits.createIndex({ resetAt: 1 }, { expireAfterSeconds: 0 });
+
   logger.info('Indexes bootstrapped successfully');
 }

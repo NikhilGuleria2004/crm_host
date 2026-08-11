@@ -56,12 +56,12 @@
 - [x] Test register, login, authenticated request, logout, expired session, revoked session from deployed frontend
 
 ## Phase 7 — Fix In-Memory Rate Limiting
-- [ ] Audit current `apps/api/src/middleware/rate-limit.ts`
-- [ ] Evaluate storage options (Redis-compatible, Vercel rate-limit, shared persistent store)
-- [ ] Implement distributed rate limiting preserving current limits
-- [ ] Use trusted request metadata for rate-limit keys (not blind `X-Forwarded-For`)
-- [ ] Preserve `429 Too Many Requests` + `Retry-After` + JSON error format
-- [ ] Verify rate limits effective across multiple simultaneous function instances
+- [x] Audit current `apps/api/src/middleware/rate-limit.ts`
+- [x] Evaluate storage options (Redis-compatible, Vercel rate-limit, shared persistent store)
+- [x] Implement distributed rate limiting preserving current limits
+- [x] Use trusted request metadata for rate-limit keys (not blind `X-Forwarded-For`)
+- [x] Preserve `429 Too Many Requests` + `Retry-After` + JSON error format
+- [x] Verify rate limits effective across multiple simultaneous function instances
 
 ## Phase 8 — Replace In-Memory Export Storage
 - [ ] Audit `apps/api/src/modules/exports/exports.service.ts` (`globalThis.__exportFileStore`)

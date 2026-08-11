@@ -356,6 +356,58 @@ export async function connectDatabase(): Promise<Db> {
 
 ---
 
+## Phase 7 — Fix In-Memory Rate Limiting
+
+**Status:** Complete  
+**Commit:** (pending)
+
+### Audit Results
+
+**Current implementation:** In-memory `Map<string, { count: number; resetAt: number }>` in `apps/api/src/middleware/rate-limit.ts`.
+
+**Problems identified:**
+1. **Not distributed** — In-memory Map is per-Function-instance. Vercel scales out to multiple instances, so each instance tracks its own counters. A single client can exceed limits by hitting different instances.
+2. **Untrusted IP extraction** — Blindly uses `X-Forwarded-For` first, which can be spoofed by clients before reaching the reverse proxy.
+3. **No rate-limit headers** — Missing `X-RateLimit-*` response headers for client visibility.
+
+### Changes
+
+1. **`apps/api/src/middleware/rate-limit.store.ts`** — Created store abstraction + MongoDB implementation:
+   - `RateLimitStore` interface with `hit(key, windowMs, max)` method
+   - `MongoRateLimitStore` using atomic `findOneAndUpdate` / `updateOne` with upsert
+   - Fixed-window algorithm: resets when `resetAt` passes
+   - TTL index on `resetAt` for automatic cleanup of old entries
+
+2. **`apps/api/src/middleware/rate-limit.ts`** — Replaced in-memory Map with `rateLimitStore`:
+   - Key construction: `x-real-ip` first (Vercel-trusted), then first entry of `x-forwarded-for`, then `anonymous`
+   - Returns `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset` headers
+   - Preserves `Retry-After` header and `429` JSON error format
+
+3. **`apps/api/src/db/collections.ts`** — Added `rateLimits` collection accessor.
+
+4. **`apps/api/src/db/indexes.ts`** — Added TTL index on `rate_limits.resetAt` with `expireAfterSeconds: 0`.
+
+### Verification
+
+| Check | Result |
+|-------|--------|
+| `pnpm typecheck` | Pass |
+| `pnpm lint` | Pass |
+| `pnpm test` | 456 passed (48 test files) |
+| `pnpm build` | Pass |
+| Distributed across instances | Pass — MongoDB-backed store shared across all Function instances |
+| Trusted IP extraction | Pass — prefers `x-real-ip` over `x-forwarded-for` |
+| Rate-limit headers | Pass — `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset` added |
+| 429 response format | Pass — `Retry-After` + JSON `{ error: { code: 'RATE_LIMITED', ... } }` preserved |
+
+### Known Limitations
+
+- MongoDB rate-limit store adds a small write per rate-limited request. For very high traffic, a Redis-compatible store (Upstash, Vercel KV) would be more efficient.
+- No per-user rate limiting yet (only IP-based). Future enhancement could use authenticated user IDs as keys.
+- Race condition between window-expiry check and upsert is minor (count may be off by 1 under high concurrency) and acceptable for rate limiting.
+
+---
+
 ## Next Phase
 
-**Phase 7:** Fix In-Memory Rate Limiting
+**Phase 8:** Replace In-Memory Export Storage
