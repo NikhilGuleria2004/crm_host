@@ -240,7 +240,7 @@ export async function connectDatabase(): Promise<Db> {
 ## Phase 5 — Authentication (Keep Node Crypto)
 
 **Status:** Complete  
-**Commit:** (pending)
+**Commit:** `d534c05`
 
 ### Audit Results
 
