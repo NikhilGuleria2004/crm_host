@@ -7,13 +7,13 @@
 ---
 
 ## Phase 0 — Establish Baseline
-- [ ] Run `pnpm install --frozen-lockfile`
-- [ ] Run `pnpm typecheck`
-- [ ] Run `pnpm lint`
-- [ ] Run `pnpm test`
-- [ ] Run `pnpm build`
-- [ ] Record baseline in `docs/vercel-migration-status.md`
-- [ ] Create rollback commit
+- [x] Run `pnpm install --frozen-lockfile`
+- [x] Run `pnpm typecheck`
+- [x] Run `pnpm lint`
+- [x] Run `pnpm test`
+- [x] Run `pnpm build`
+- [x] Record baseline in `docs/vercel-migration-status.md`
+- [x] Create rollback commit
 
 ## Phase 1 — Vercel/Hono Entrypoint
 - [ ] Inspect current `apps/api/src/index.ts` and `apps/api/src/app.ts`
