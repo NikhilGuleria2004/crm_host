@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-primary: #0F4C81;
+  --color-primary-foreground: #FFFFFF;
+  --color-accent: #2563EB;
+  --color-accent-foreground: #FFFFFF;
+  --color-background: #F5F7FA;
+  --color-card: #FFFFFF;
+  --color-border: #D6DCE5;
+  --color-foreground: #1F2937;
+  --color-muted: #6B7280;
+  --color-muted-foreground: #6B7280;
+  --color-success: #15803D;
+  --color-warning: #CA8A04;
+  --color-danger: #B91C1C;
+}
+
+body {
+  margin: 0;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+}

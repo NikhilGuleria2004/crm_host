@@ -1,0 +1,29 @@
+{
+  "name": "crm",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Industry-ready CRM platform — modular monolith",
+  "packageManager": "pnpm@9.0.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "pnpm --filter @crm/web dev & pnpm --filter @crm/api dev",
+    "dev:web": "pnpm --filter @crm/web dev",
+    "dev:api": "pnpm --filter @crm/api dev",
+    "build": "pnpm --filter @crm/web build && pnpm --filter @crm/api build",
+    "build:web": "pnpm --filter @crm/web build",
+    "build:api": "pnpm --filter @crm/api build",
+    "lint": "pnpm --filter @crm/web lint && pnpm --filter @crm/api lint",
+    "lint:fix": "pnpm --filter @crm/web lint:fix && pnpm --filter @crm/api lint:fix",
+    "typecheck": "pnpm --filter @crm/web typecheck && pnpm --filter @crm/api typecheck",
+    "test": "pnpm --filter @crm/web test && pnpm --filter @crm/api test && pnpm --filter @crm/shared test && pnpm --filter @crm/ui test && pnpm --filter @crm/config test",
+    "db:seed": "pnpm --filter @crm/api db:seed",
+    "clean": "rm -rf node_modules && pnpm install"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  }
+}
