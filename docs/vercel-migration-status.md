@@ -471,6 +471,72 @@ export async function connectDatabase(): Promise<Db> {
 
 ---
 
+## Phase 9 — Replace Mock Import Implementation
+
+**Status:** Complete  
+**Commit:** `61704b9`
+
+### Audit Results
+
+**Current implementation:** `apps/api/src/modules/imports/imports.service.ts` used hardcoded mock CSV strings in `previewImport()` and `startImport()`:
+```typescript
+const content = `First Name,Last Name,Email,Phone,Company
+John,Doe,john@example.com,1234567890,Acme
+Jane,Smith,jane@example.com,0987654321,Globex`;
+```
+
+**Problems identified:**
+1. **No real file upload** — No route accepted `multipart/form-data` file uploads
+2. **Mock data only** — Preview and processing used hardcoded CSV strings instead of uploaded files
+3. **No file persistence** — Uploaded files were not stored anywhere
+4. **No idempotency** — Re-uploading the same file would create duplicate jobs
+
+### Changes
+
+1. **`apps/api/src/modules/imports/imports.controller.ts`** — Added `upload()` method for `POST /`:
+   - Parses `multipart/form-data` via `c.req.formData()`
+   - Validates `entity` and `file` fields
+   - Returns `201 Created` with job response
+
+2. **`apps/api/src/modules/imports/imports.routes.ts`** — Added `app.post('/', authorize(IMPORT_PERMISSIONS.create), controller.upload)`
+
+3. **`apps/api/src/modules/imports/imports.service.ts`** — Complete rewrite:
+   - Added `MAX_FILE_SIZE = 10 MB` constant
+   - `createJob()` now accepts `{ name, content }` file object, validates size, stores via `fileStorage.put()`, computes SHA-256 content hash for idempotency
+   - `previewImport()` reads real file from `fileStorage.get()` instead of mock data
+   - `startImport()` reads real file from `fileStorage.get()` and processes actual rows
+   - Removed all hardcoded mock CSV strings
+   - Improved `parseCSVLine()` to handle empty trailing fields correctly
+
+4. **`apps/api/src/modules/imports/imports.repository.ts`** — Added `findByFileKey()` method for idempotency checks
+
+5. **`apps/api/src/utils/crypto.ts`** — Added `hashContent()` helper using HMAC-SHA256
+
+6. **Test updates:**
+   - `tests/imports.service.test.ts` — Mocked `fileStorage`, updated `createJob` signature, added `findByFileKey` mock
+   - `tests/imports.routes.test.ts` — Mocked `fileStorage`, added upload route test with `FormData`/`Blob`
+
+### Verification
+
+| Check | Result |
+|-------|--------|
+| `pnpm typecheck` | Pass |
+| `pnpm lint` | Pass |
+| `pnpm test` | **457 passed** (48 test files) |
+| `pnpm build` | Pass |
+| File upload | Pass — `POST /` accepts `multipart/form-data` |
+| MAX_FILE_SIZE | Pass — 10 MB limit enforced |
+| Idempotency | Pass — same file re-upload returns existing job |
+| Real CSV parsing | Pass — preview and start use stored file content |
+
+### Known Limitations
+
+- Processing is still synchronous in `startImport()`. For large files, this should be moved to a background queue (Phase 10).
+- MongoDB is used as file storage via `fileStorage`. For large files, Vercel Blob or S3/R2 would be more efficient.
+- `processRow()` still returns hardcoded IDs (`temp-contact-id`). Real entity creation logic will be added later.
+
+---
+
 ## Next Phase
 
-**Phase 9:** Replace Mock Import Implementation
+**Phase 10:** Migrate Node Background Worker
