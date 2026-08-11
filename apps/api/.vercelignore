@@ -1,0 +1,12 @@
+node_modules
+.git
+.gitignore
+.env*
+*.test.ts
+*.spec.ts
+dist
+Dockerfile
+docker-compose.yml
+docs
+tests
+worker.Dockerfile

@@ -16,16 +16,16 @@
 - [x] Create rollback commit
 
 ## Phase 1 — Vercel/Hono Entrypoint
-- [ ] Inspect current `apps/api/src/index.ts` and `apps/api/src/app.ts`
-- [ ] Create `apps/api/src/vercel.ts` (Vercel Function adapter)
-- [ ] Create `apps/api/src/node.ts` (local Node dev server, if needed)
-- [ ] Verify local Vercel-compatible invocation reaches `GET /`, `GET /health`, `GET /ready`
-- [ ] Verify route behavior unchanged
+- [x] Inspect current `apps/api/src/index.ts` and `apps/api/src/app.ts`
+- [x] Create `apps/api/src/vercel.ts` (Vercel Function adapter)
+- [x] Create `apps/api/src/node.ts` (local Node dev server, if needed)
+- [x] Verify local Vercel-compatible invocation reaches `GET /`, `GET /health`, `GET /ready`
+- [x] Verify route behavior unchanged
 
 ## Phase 2 — Vercel Project Configuration
-- [ ] Decide: one Vercel project vs two (`crm-web`, `crm-api`)
-- [ ] Configure API project root directory (`apps/api`)
-- [ ] Run `vercel build` successfully from API project context
+- [x] Decide: one Vercel project vs two (`crm-web`, `crm-api`)
+- [x] Configure API project root directory (`apps/api`)
+- [x] Run `vercel build` successfully from API project context
 
 ## Phase 3 — Environment Variables and Secrets
 - [ ] Audit all required env vars (`MONGODB_URI`, `MONGODB_DATABASE`, `SESSION_SECRET`, `CORS_ORIGIN`, `COOKIE_DOMAIN`, integration vars)
