@@ -1,5 +1,6 @@
 import { ExportRepository } from './exports.repository';
 import { fileStorage } from '../../storage/mongo-file-storage';
+import { queue } from '../../queue';
 import type { ExportJobResponse, ExportListResponse, ExportListQuery } from './exports.types';
 
 export class ExportService {
@@ -42,21 +43,38 @@ export class ExportService {
       createdBy: userId,
     });
 
-    await this.processExport(doc);
+    await queue.enqueue({
+      version: 1,
+      type: 'export',
+      payload: {
+        jobId: doc._id.toHexString(),
+        organizationId,
+        entity,
+        fields,
+        filters,
+      },
+    });
 
     const updated = await this.repository.findById(doc._id.toHexString(), organizationId);
     if (!updated) throw new Error('Export job not found after processing');
     return this.repository.toResponse(updated);
   }
 
-  private async processExport(doc: { _id: { toHexString: () => string }; organizationId: { toHexString: () => string }; entity: string; fields: string[] }): Promise<void> {
-    const rows = this.generateMockRows(doc.fields.length);
-    const csv = this.generateCSV(doc.fields, rows);
+  async processExport(payload: Record<string, unknown>): Promise<void> {
+    const jobId = payload.jobId as string;
+    const organizationId = payload.organizationId as string;
+    const fields = payload.fields as string[];
 
-    const fileKey = `exports/${doc._id.toHexString()}.csv`;
+    const doc = await this.repository.findById(jobId, organizationId);
+    if (!doc) throw new Error('Export job not found');
+
+    const rows = this.generateMockRows(fields.length);
+    const csv = this.generateCSV(fields, rows);
+
+    const fileKey = `exports/${jobId}.csv`;
     await fileStorage.put(fileKey, Buffer.from(csv), 'text/csv');
 
-    await this.repository.updateStatus(doc._id.toHexString(), doc.organizationId.toHexString(), {
+    await this.repository.updateStatus(jobId, organizationId, {
       status: 'completed',
       fileKey,
       totalRows: rows.length,

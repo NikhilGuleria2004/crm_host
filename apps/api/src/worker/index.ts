@@ -1,28 +1,21 @@
 import { connectDatabase, closeDatabase } from '../db/client';
-import { collections } from '../db/collections';
+import { queue } from '../queue';
+import { exportConsumer, importConsumer, createWebhookConsumer, outboxConsumer } from '../queue/consumers';
 import { logger } from '../utils/logger';
 
-async function processOutboxEvents() {
+queue.register(exportConsumer);
+queue.register(importConsumer);
+queue.register(createWebhookConsumer());
+queue.register(outboxConsumer);
+
+async function processQueue() {
   try {
     await connectDatabase();
-    logger.info('Worker started, processing outbox events...');
+    logger.info('Worker started, processing queue jobs...');
 
-    const outboxCollection = collections.outboxEvents();
-    const event = await outboxCollection.findOne({ status: 'pending' });
-    if (!event) {
-      logger.info('No pending outbox events');
-      await closeDatabase();
-      process.exit(0);
-    }
+    const processed = await queue.processAll(10);
+    logger.info({ processed }, 'Worker processed queue jobs');
 
-    logger.info({ eventId: event._id.toHexString(), type: event.type }, 'Processing outbox event');
-
-    await outboxCollection.updateOne(
-      { _id: event._id },
-      { $set: { status: 'processing', processedAt: new Date() } }
-    );
-
-    logger.info('Outbox event processed');
     await closeDatabase();
     process.exit(0);
   } catch (error) {
@@ -31,4 +24,4 @@ async function processOutboxEvents() {
   }
 }
 
-processOutboxEvents();
+processQueue();

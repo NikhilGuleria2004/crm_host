@@ -169,5 +169,9 @@ export async function bootstrapIndexes(): Promise<void> {
   const files = db.collection('files');
   await files.createIndex({ updatedAt: 1 }, { expireAfterSeconds: 0 });
 
+  const queueJobs = db.collection('queue_jobs');
+  await queueJobs.createIndex({ status: 1, availableAt: 1 });
+  await queueJobs.createIndex({ type: 1, 'payload.jobId': 1 });
+
   logger.info('Indexes bootstrapped successfully');
 }

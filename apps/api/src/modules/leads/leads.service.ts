@@ -3,6 +3,7 @@ import { LeadRepository } from './leads.repository';
 import type { CreateLeadInput, UpdateLeadInput, LeadResponse, LeadListResponse, LeadListQuery, ConvertLeadInput, ConvertLeadResponse } from './leads.types';
 import { collections } from '../../db/collections';
 import { auditLog } from '../../middleware/audit';
+import { queue } from '../../queue';
 
 function toObjectId(value: string | undefined | null): ObjectId | undefined {
   if (!value || !/^[0-9a-f]{24}$/i.test(value)) return undefined;
@@ -301,23 +302,24 @@ export class LeadService {
       updatedAt: convertedAt,
     } as any);
 
-    await collections.outboxEvents().insertOne({
-      organizationId: new ObjectId(organizationId),
-      type: 'lead.converted',
-      entityType: 'lead',
-      entityId: lead._id,
+    await queue.enqueue({
+      version: 1,
+      type: 'outbox',
       payload: {
-        leadId: lead._id.toHexString(),
-        contactId: response.lead.convertedContactId,
-        companyId: response.lead.convertedCompanyId,
-        dealId: response.lead.convertedDealId,
-        convertedAt: convertedAt.toISOString(),
+        jobId: `lead.converted:${lead._id.toHexString()}`,
+        organizationId: organizationId,
+        type: 'lead.converted',
+        entityType: 'lead',
+        entityId: lead._id.toHexString(),
+        payload: {
+          leadId: lead._id.toHexString(),
+          contactId: response.lead.convertedContactId,
+          companyId: response.lead.convertedCompanyId,
+          dealId: response.lead.convertedDealId,
+          convertedAt: convertedAt.toISOString(),
+        },
       },
-      status: 'pending',
-      attempts: 0,
-      availableAt: convertedAt,
-      createdAt: convertedAt,
-    } as any);
+    });
 
     await auditLog(c, {
       action: 'lead.converted',

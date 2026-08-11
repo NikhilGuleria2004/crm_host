@@ -1,7 +1,9 @@
 import { ImportRepository } from './imports.repository';
 import { fileStorage } from '../../storage/mongo-file-storage';
 import { hashContent } from '../../utils/crypto';
+import { queue } from '../../queue';
 import type { ImportJobResponse, ImportListResponse, ImportListQuery, ImportRowResult, ImportPreviewResponse } from './imports.types';
+import type { JobResult } from '../../queue/types';
 
 export const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
@@ -63,6 +65,18 @@ export class ImportService {
 
     await fileStorage.put(fileKey, file.content, 'text/csv');
 
+    await queue.enqueue({
+      version: 1,
+      type: 'import',
+      payload: {
+        jobId: doc._id.toHexString(),
+        organizationId,
+        entity,
+        fileKey,
+        totalRows,
+      },
+    });
+
     return this.repository.toResponse(doc);
   }
 
@@ -117,61 +131,77 @@ export class ImportService {
       failedCount: 0,
     });
 
-    const file = await fileStorage.get(job.fileKey);
-    if (!file) {
-      throw new Error('Import file not found');
-    }
-
-    const content = file.content.toString('utf-8');
-    const { rows } = this.parseCSV(content);
-    const results = await this.processImport(jobId, organizationId, rows, mapping);
-
-    const createdCount = results.filter((r) => r.action === 'created').length;
-    const updatedCount = results.filter((r) => r.action === 'updated').length;
-    const failedCount = results.filter((r) => r.action === 'failed').length;
-
-    await this.repository.updateStatus(jobId, organizationId, {
-      status: 'completed',
-      processedRows: rows.length,
-      createdCount,
-      updatedCount,
-      failedCount,
-      completedAt: new Date(),
+    await queue.enqueue({
+      version: 1,
+      type: 'import',
+      payload: {
+        jobId,
+        organizationId,
+        entity: job.entity,
+        fileKey: job.fileKey,
+        totalRows: job.totalRows,
+        mapping,
+      },
     });
   }
 
-  async processImport(jobId: string, organizationId: string, rows: Record<string, unknown>[], mapping: Record<string, string>): Promise<ImportRowResult[]> {
+  async processImport(payload: Record<string, unknown>): Promise<JobResult> {
+    const jobId = payload.jobId as string;
+    const organizationId = payload.organizationId as string;
+    const fileKey = payload.fileKey as string;
+    const mapping = (payload.mapping || {}) as Record<string, string>;
+
+    try {
+      const file = await fileStorage.get(fileKey);
+      if (!file) {
+        throw new Error('Import file not found');
+      }
+
+      const content = file.content.toString('utf-8');
+      const { rows } = this.parseCSV(content);
+      const results = await this.processImportRows(jobId, organizationId, rows, mapping);
+
+      const createdCount = results.filter((r) => r.action === 'created').length;
+      const updatedCount = results.filter((r) => r.action === 'updated').length;
+      const failedCount = results.filter((r) => r.action === 'failed').length;
+
+      await this.repository.updateStatus(jobId, organizationId, {
+        status: 'completed',
+        processedRows: rows.length,
+        createdCount,
+        updatedCount,
+        failedCount,
+        completedAt: new Date(),
+      });
+
+      return { success: true };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      await this.repository.updateStatus(jobId, organizationId, {
+        status: 'failed',
+      });
+
+      return { success: false, error: errorMessage };
+    }
+  }
+
+  async processImportRows(jobId: string, organizationId: string, rows: Record<string, unknown>[], mapping: Record<string, string>): Promise<ImportRowResult[]> {
     const results: ImportRowResult[] = [];
-    let createdCount = 0;
-    let updatedCount = 0;
-    let failedCount = 0;
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       try {
         const result = await this.processRow(organizationId, row, mapping);
         results.push({ row: i + 1, action: result.action, id: result.id });
-        if (result.action === 'created') createdCount++;
-        else if (result.action === 'updated') updatedCount++;
-        else failedCount++;
       } catch (error) {
         results.push({
           row: i + 1,
           action: 'failed',
           error: error instanceof Error ? error.message : 'Unknown error',
         });
-        failedCount++;
       }
     }
-
-    await this.repository.updateStatus(jobId, organizationId, {
-      status: 'completed',
-      processedRows: rows.length,
-      createdCount,
-      updatedCount,
-      failedCount,
-      completedAt: new Date(),
-    });
 
     return results;
   }

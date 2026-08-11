@@ -31,6 +31,10 @@ vi.mock('../src/db/collections', () => ({
     tasks: () => mockTasks,
     leads: () => mockLeads,
     rolePermissions: () => mockRolePermissions,
+    queueJobs: () => ({
+      findOne: vi.fn().mockResolvedValue(null),
+      insertOne: vi.fn().mockResolvedValue({ insertedId: new (require('mongodb').ObjectId)() }),
+    }),
   },
 }));
 

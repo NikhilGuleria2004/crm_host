@@ -4,12 +4,26 @@
     {
       "src": "src/vercel.ts",
       "use": "@vercel/node"
+    },
+    {
+      "src": "src/queue/cron.ts",
+      "use": "@vercel/node"
     }
   ],
   "routes": [
     {
       "src": "/(.*)",
       "dest": "src/vercel.ts"
+    },
+    {
+      "src": "/api/cron/queue",
+      "dest": "src/queue/cron.ts"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/queue",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

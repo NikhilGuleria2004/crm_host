@@ -10,6 +10,12 @@ vi.mock('../src/storage/mongo-file-storage', () => ({
   },
 }));
 
+vi.mock('../src/queue', () => ({
+  queue: {
+    enqueue: vi.fn().mockResolvedValue('mock-job-id'),
+  },
+}));
+
 function createMockRepository(): vi.Mocked<ExportRepository> {
   return {
     findById: vi.fn(),
@@ -102,14 +108,7 @@ describe('P27 ExportService', () => {
   });
 
   describe('createJob', () => {
-    it('should create export job and process it', async () => {
-      const completedDoc = {
-        ...mockExportDoc,
-        status: 'completed' as const,
-        fileKey: 'exports/test.csv',
-        totalRows: 5,
-        completedAt: new Date(),
-      };
+    it('should create export job and enqueue it', async () => {
       const createdDoc = {
         ...mockExportDoc,
         status: 'pending' as const,
@@ -118,41 +117,32 @@ describe('P27 ExportService', () => {
         completedAt: undefined,
       };
       repository.create.mockResolvedValue(createdDoc);
-      repository.findById.mockResolvedValue(completedDoc);
+      repository.findById.mockResolvedValue(createdDoc);
 
       const result = await service.createJob(orgId, userId, 'contacts', ['firstName', 'email'], {});
 
       expect(repository.create).toHaveBeenCalled();
-      expect(result.status).toBe('completed');
-      expect(result.totalRows).toBe(5);
+      expect(result.status).toBe('pending');
     });
   });
 
-  describe('generateCSV', () => {
-    it('should generate CSV with headers and rows', async () => {
-      const completedDoc = {
-        ...mockExportDoc,
-        status: 'completed' as const,
-        fileKey: 'exports/test.csv',
-        totalRows: 5,
-        completedAt: new Date(),
-      };
-      const createdDoc = {
+  describe('processExport', () => {
+    it('should process export and update job status', async () => {
+      const pendingDoc = {
         ...mockExportDoc,
         status: 'pending' as const,
         fileKey: undefined,
         totalRows: undefined,
         completedAt: undefined,
       };
-      repository.create.mockResolvedValue(createdDoc);
-      repository.findById.mockResolvedValue(completedDoc);
+      repository.findById.mockResolvedValue(pendingDoc);
+      repository.updateStatus.mockResolvedValue(undefined);
 
-      const result = await service.createJob(orgId, userId, 'contacts', ['firstName', 'email'], {});
+      await service.processExport({ jobId: exportId, organizationId: orgId, entity: 'contacts', fields: ['firstName', 'email'] });
 
-      expect(result.status).toBe('completed');
       expect(repository.updateStatus).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.any(String),
+        exportId,
+        orgId,
         expect.objectContaining({
           status: 'completed',
           totalRows: 5,

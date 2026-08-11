@@ -10,6 +10,12 @@ vi.mock('../src/storage/mongo-file-storage', () => ({
   },
 }));
 
+vi.mock('../src/queue', () => ({
+  queue: {
+    enqueue: vi.fn().mockResolvedValue('mock-job-id'),
+  },
+}));
+
 function createMockRepository(): vi.Mocked<ImportRepository> {
   return {
     findById: vi.fn(),
@@ -176,7 +182,7 @@ describe('P26 ImportService', () => {
   });
 
   describe('startImport', () => {
-    it('should process import and update job status', async () => {
+    it('should enqueue import processing and update status to processing', async () => {
       repository.findById.mockResolvedValue(mockImportDoc);
       repository.updateStatus.mockResolvedValue(undefined);
       const mockFileStorage = await import('../src/storage/mongo-file-storage');
@@ -191,8 +197,7 @@ describe('P26 ImportService', () => {
         importId,
         orgId,
         expect.objectContaining({
-          status: 'completed',
-          processedRows: 1,
+          status: 'processing',
         })
       );
     });

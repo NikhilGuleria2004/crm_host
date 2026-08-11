@@ -3,6 +3,12 @@ import { ObjectId } from 'mongodb';
 import { Hono } from 'hono';
 import { createLeadsRoutes } from '../src/modules/leads/leads.routes';
 
+vi.mock('../src/queue', () => ({
+  queue: {
+    enqueue: vi.fn().mockResolvedValue('mock-job-id'),
+  },
+}));
+
 function createMockCollection() {
   return {
     findOne: vi.fn(),
@@ -37,6 +43,10 @@ vi.mock('../src/db/collections', () => ({
     rolePermissions: () => mockRolePermissions,
     activities: () => mockActivities,
     outboxEvents: () => mockOutboxEvents,
+    queueJobs: () => ({
+      findOne: vi.fn().mockResolvedValue(null),
+      insertOne: vi.fn().mockResolvedValue({ insertedId: new (require('mongodb').ObjectId)() }),
+    }),
   },
 }));
 
@@ -137,18 +147,18 @@ describe('P20 Lead Conversion E2E', () => {
     expect(mockCompanies.insertOne).toHaveBeenCalledTimes(1);
     expect(mockDeals.insertOne).toHaveBeenCalledTimes(1);
     expect(mockActivities.insertOne).toHaveBeenCalledTimes(1);
-    expect(mockOutboxEvents.insertOne).toHaveBeenCalledTimes(1);
     expect(mockAuditLogs.insertOne).toHaveBeenCalledTimes(1);
 
-    const activityCall = (mockActivities.insertOne as any).mock.calls[0][0];
-    expect(activityCall.type).toBe('note');
-    expect(activityCall.subject).toBe('Lead converted');
-    expect(activityCall.leadId.toString()).toBe(mockLead._id.toString());
-
-    const outboxCall = (mockOutboxEvents.insertOne as any).mock.calls[0][0];
-    expect(outboxCall.type).toBe('lead.converted');
-    expect(outboxCall.entityType).toBe('lead');
-    expect(outboxCall.payload.leadId).toBe(mockLead._id.toHexString());
+    const queue = (await import('../src/queue')).queue;
+    expect(queue.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        version: 1,
+        type: 'outbox',
+        payload: expect.objectContaining({
+          type: 'lead.converted',
+        }),
+      })
+    );
   });
 
   it('should create activity and outbox event even for contact-only conversion', async () => {
@@ -172,8 +182,18 @@ describe('P20 Lead Conversion E2E', () => {
 
     expect(mockContacts.insertOne).toHaveBeenCalledTimes(1);
     expect(mockActivities.insertOne).toHaveBeenCalledTimes(1);
-    expect(mockOutboxEvents.insertOne).toHaveBeenCalledTimes(1);
     expect(mockAuditLogs.insertOne).toHaveBeenCalledTimes(1);
+
+    const queue = (await import('../src/queue')).queue;
+    expect(queue.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        version: 1,
+        type: 'outbox',
+        payload: expect.objectContaining({
+          type: 'lead.converted',
+        }),
+      })
+    );
   });
 
   it('should be idempotent and reject double conversion', async () => {

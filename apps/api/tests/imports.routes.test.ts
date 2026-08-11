@@ -30,6 +30,10 @@ vi.mock('../src/db/collections', () => ({
   collections: {
     importJobs: () => mockImportJobs,
     rolePermissions: () => mockRolePermissions,
+    queueJobs: () => ({
+      findOne: vi.fn().mockResolvedValue(null),
+      insertOne: vi.fn().mockResolvedValue({ insertedId: new (require('mongodb').ObjectId)() }),
+    }),
   },
 }));
 
@@ -202,7 +206,7 @@ describe('P26 Imports Routes', () => {
 
       expect(response.status).toBe(200);
       const data = await response.json();
-      expect(data.data.status).toBe('completed');
+      expect(data.data.status).toBe('processing');
     });
   });
 });
