@@ -358,10 +358,10 @@ Files changed:
 Tests: 533 passed, 0 failed
 
 ## Phase 20 — Error Handling
-- [ ] Review `apps/api/src/middleware/error-handler.ts`
-- [ ] Ensure production errors do not expose stack traces, filesystem paths, MongoDB connection strings, secret values, internal credentials
-- [ ] Preserve current API error schema
-- [ ] Add tests for 400, 401, 403, 404, 409, 422, 429, 500 where relevant
+- [x] Review `apps/api/src/middleware/error-handler.ts`
+- [x] Ensure production errors do not expose stack traces, filesystem paths, MongoDB connection strings, secret values, internal credentials
+- [x] Preserve current API error schema
+- [x] Add tests for 400, 401, 403, 404, 409, 422, 429, 500 where relevant
 
 ## Phase 21 — Tenant Isolation (Security Audit)
 - [ ] Create Organization A + User A, Organization B + User B
