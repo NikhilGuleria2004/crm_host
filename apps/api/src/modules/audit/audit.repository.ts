@@ -105,8 +105,11 @@ export class AuditRepository {
     };
   }
 
-  async findById(id: string): Promise<AuditLogDocument | null> {
-    const doc = await collections.auditLogs().findOne({ _id: new ObjectId(id) });
+  async findById(id: string, organizationId: string): Promise<AuditLogDocument | null> {
+    const doc = await collections.auditLogs().findOne({
+      _id: new ObjectId(id),
+      organizationId: new ObjectId(organizationId),
+    });
     return doc as AuditLogDocument | null;
   }
 

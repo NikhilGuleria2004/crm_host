@@ -34,8 +34,12 @@ export class ApiKeyRepository {
     return doc as ApiKeyDocument;
   }
 
-  async findByKeyHash(keyHash: string): Promise<ApiKeyDocument | null> {
-    const doc = await collections.apiKeys().findOne({ keyHash, revokedAt: { $exists: false } });
+  async findByKeyHash(keyHash: string, organizationId?: string): Promise<ApiKeyDocument | null> {
+    const query: Record<string, unknown> = { keyHash, revokedAt: { $exists: false } };
+    if (organizationId) {
+      query.organizationId = new ObjectId(organizationId);
+    }
+    const doc = await collections.apiKeys().findOne(query);
     return doc as ApiKeyDocument | null;
   }
 
@@ -85,8 +89,11 @@ export class ApiKeyRepository {
     );
   }
 
-  async updateLastUsed(id: string): Promise<void> {
-    await collections.apiKeys().updateOne({ _id: new ObjectId(id) }, { $set: { lastUsedAt: new Date() } });
+  async updateLastUsed(id: string, organizationId: string): Promise<void> {
+    await collections.apiKeys().updateOne(
+      { _id: new ObjectId(id), organizationId: new ObjectId(organizationId) },
+      { $set: { lastUsedAt: new Date() } }
+    );
   }
 
   toResponse(doc: ApiKeyDocument): ApiKeyResponse {

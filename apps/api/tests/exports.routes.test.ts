@@ -3,7 +3,7 @@ import { ObjectId } from 'mongodb';
 import { Hono } from 'hono';
 import { createExportsRoutes } from '../src/modules/exports/exports.routes';
 
-vi.mock('../src/storage/mongo-file-storage', () => ({
+vi.mock('../src/storage/factory', () => ({
   fileStorage: {
     put: vi.fn().mockResolvedValue(undefined),
     get: vi.fn().mockResolvedValue(null),
@@ -48,7 +48,10 @@ function createAppWithAuth(overrides: any = {}) {
     const organizationId = overrides.organizationId !== undefined ? overrides.organizationId : orgAId;
     c.set('organizationId', organizationId);
     c.set('user', overrides.user || { id: userId, status: 'active', roleIds: [roleId], teamIds: [] });
-    c.set('permissions', overrides.permissions || [{ permission: 'exports.*', scope: 'ORGANIZATION' }]);
+    c.set('permissions', overrides.permissions || [
+      { permission: 'exports.*', scope: 'ORGANIZATION' },
+      { permission: 'contacts.*', scope: 'ORGANIZATION' },
+    ]);
     await next();
   });
   app.route('/api/v1/exports', createExportsRoutes());
@@ -59,7 +62,7 @@ describe('P27 Exports Routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockRolePermissions.find.mockReturnValue({
-      toArray: vi.fn().mockResolvedValue([{ permission: 'exports.*', scope: 'ORGANIZATION' }]),
+      toArray: vi.fn().mockResolvedValue([{ permission: 'contacts.*', scope: 'ORGANIZATION' }]),
     } as any);
 
     const mockJob = {

@@ -50,11 +50,11 @@ export class ApiKeyService {
     await this.repository.revoke(id, organizationId);
   }
 
-  async validateKey(rawKey: string): Promise<ApiKeyDocument | null> {
+  async validateKey(rawKey: string, organizationId?: string): Promise<ApiKeyDocument | null> {
     const keyHash = hashToken(rawKey);
-    const doc = await this.repository.findByKeyHash(keyHash);
+    const doc = await this.repository.findByKeyHash(keyHash, organizationId);
     if (doc) {
-      await this.repository.updateLastUsed(doc._id.toHexString());
+      await this.repository.updateLastUsed(doc._id.toHexString(), doc.organizationId.toHexString());
     }
     return doc;
   }

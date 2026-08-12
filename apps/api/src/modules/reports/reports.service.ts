@@ -1,7 +1,7 @@
 import { ObjectId } from 'mongodb';
 import { ReportsRepository } from './reports.repository';
 import { collections } from '../../db/collections';
-import { queue } from '../../queue';
+import { createQueue } from '../../queue/factory';
 import type { SalesReportResponse, LeadConversionReportResponse, ActivityReportResponse, PipelineReportResponse, ReportExportJobResponse } from './reports.types';
 
 export class ReportsService {
@@ -41,7 +41,7 @@ export class ReportsService {
 
     const jobId = doc.insertedId.toHexString();
 
-    await queue.enqueue({
+    await createQueue().enqueue({
       version: 1,
       type: 'report',
       payload: {

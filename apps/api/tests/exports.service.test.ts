@@ -3,17 +3,17 @@ import { ObjectId } from 'mongodb';
 import { ExportService } from '../src/modules/exports/exports.service';
 import type { ExportRepository } from '../src/modules/exports/exports.repository';
 
-vi.mock('../src/storage/mongo-file-storage', () => ({
+vi.mock('../src/storage/factory', () => ({
   fileStorage: {
     put: vi.fn().mockResolvedValue(undefined),
     get: vi.fn().mockResolvedValue(null),
   },
 }));
 
-vi.mock('../src/queue', () => ({
-  queue: {
+vi.mock('../src/queue/factory', () => ({
+  createQueue: () => ({
     enqueue: vi.fn().mockResolvedValue('mock-job-id'),
-  },
+  }),
 }));
 
 function createMockRepository(): vi.Mocked<ExportRepository> {

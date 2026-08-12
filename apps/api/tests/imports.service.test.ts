@@ -3,17 +3,17 @@ import { ObjectId } from 'mongodb';
 import { ImportService, MAX_FILE_SIZE } from '../src/modules/imports/imports.service';
 import type { ImportRepository } from '../src/modules/imports/imports.repository';
 
-vi.mock('../src/storage/mongo-file-storage', () => ({
+vi.mock('../src/storage/factory', () => ({
   fileStorage: {
     put: vi.fn().mockResolvedValue(undefined),
     get: vi.fn().mockResolvedValue(null),
   },
 }));
 
-vi.mock('../src/queue', () => ({
-  queue: {
+vi.mock('../src/queue/factory', () => ({
+  createQueue: () => ({
     enqueue: vi.fn().mockResolvedValue('mock-job-id'),
-  },
+  }),
 }));
 
 function createMockRepository(): vi.Mocked<ImportRepository> {
@@ -158,7 +158,7 @@ describe('P26 ImportService', () => {
   describe('previewImport', () => {
     it('should return preview with headers and rows', async () => {
       repository.findById.mockResolvedValue(mockImportDoc);
-      const mockFileStorage = await import('../src/storage/mongo-file-storage');
+      const mockFileStorage = await import('../src/storage/factory');
       mockFileStorage.fileStorage.get.mockResolvedValue({
         content: Buffer.from('First Name,Last Name,Email\nJohn,Doe,john@example.com'),
         contentType: 'text/csv',
@@ -185,7 +185,7 @@ describe('P26 ImportService', () => {
     it('should enqueue import processing and update status to processing', async () => {
       repository.findById.mockResolvedValue(mockImportDoc);
       repository.updateStatus.mockResolvedValue(undefined);
-      const mockFileStorage = await import('../src/storage/mongo-file-storage');
+      const mockFileStorage = await import('../src/storage/factory');
       mockFileStorage.fileStorage.get.mockResolvedValue({
         content: Buffer.from('First Name,Last Name,Email\nJohn,Doe,john@example.com'),
         contentType: 'text/csv',

@@ -64,7 +64,26 @@ export function createImportsController(service: ImportService) {
           return c.json({ error: { code: 'VALIDATION_ERROR', message: 'File is required' } }, 400);
         }
 
+        const fileName = file.name.toLowerCase();
+        if (!fileName.endsWith('.csv')) {
+          return c.json({ error: { code: 'VALIDATION_ERROR', message: 'Only CSV files are allowed' } }, 400);
+        }
+
         const content = Buffer.from(await file.arrayBuffer());
+        const maxSize = 10 * 1024 * 1024;
+        if (content.length > maxSize) {
+          return c.json({ error: { code: 'VALIDATION_ERROR', message: `File size exceeds maximum allowed size of ${maxSize / 1024 / 1024} MB` } }, 400);
+        }
+
+        const text = content.toString('utf-8');
+        if (!text.trim()) {
+          return c.json({ error: { code: 'VALIDATION_ERROR', message: 'File is empty' } }, 400);
+        }
+
+        const lines = text.split(/\r?\n/).filter((line) => line.trim());
+        if (lines.length < 2) {
+          return c.json({ error: { code: 'VALIDATION_ERROR', message: 'CSV must contain a header row and at least one data row' } }, 400);
+        }
         const job = await service.createJob(organizationId, user.id, entity, {
           name: file.name,
           content,

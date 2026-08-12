@@ -62,7 +62,11 @@ export function createAuditController(service: AuditService) {
 
     async getById(c: any) {
       const id = c.req.param('id');
-      const log = await service.getLogById(id);
+      const organizationId = c.get('organizationId');
+      if (!organizationId) {
+        return c.json({ error: { code: 'ORGANIZATION_CONTEXT_REQUIRED', message: 'Organization context required' } }, 400);
+      }
+      const log = await service.getLogById(id, organizationId);
       if (!log) {
         return c.json({ error: { code: 'RESOURCE_NOT_FOUND', message: 'Audit log not found' } }, 404);
       }

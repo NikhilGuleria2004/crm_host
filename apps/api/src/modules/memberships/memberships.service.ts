@@ -26,7 +26,7 @@ export class MembershipService {
       throw new Error('Invalid or expired invitation');
     }
 
-    const updated = await this.repository.update(membership._id.toHexString(), { status: 'active' });
+    const updated = await this.repository.update(membership._id.toHexString(), membership.organizationId.toHexString(), { status: 'active' });
     return this.repository.toResponse(updated) as OrganizationMembershipResponse;
   }
 
@@ -35,18 +35,18 @@ export class MembershipService {
     return memberships.map((m) => this.repository.toResponse(m) as OrganizationMembershipResponse);
   }
 
-  async getById(id: string): Promise<OrganizationMembershipResponse | null> {
-    const membership = await this.repository.findById(id);
+  async getById(id: string, organizationId: string): Promise<OrganizationMembershipResponse | null> {
+    const membership = await this.repository.findById(id, organizationId);
     return this.repository.toResponse(membership) as OrganizationMembershipResponse | null;
   }
 
-  async update(id: string, input: UpdateMembershipInput): Promise<OrganizationMembershipResponse | null> {
-    const membership = await this.repository.update(id, input);
+  async update(id: string, organizationId: string, input: UpdateMembershipInput): Promise<OrganizationMembershipResponse | null> {
+    const membership = await this.repository.update(id, organizationId, input);
     return this.repository.toResponse(membership) as OrganizationMembershipResponse | null;
   }
 
-  async remove(id: string): Promise<void> {
-    await this.repository.remove(id);
+  async remove(id: string, organizationId: string): Promise<void> {
+    await this.repository.remove(id, organizationId);
   }
 
   async getByUserAndOrg(userId: string, organizationId: string): Promise<OrganizationMembershipResponse | null> {

@@ -34,8 +34,8 @@ export class AuditService {
     };
   }
 
-  async getLogById(id: string): Promise<AuditLogResponse | null> {
-    const log = await this.repository.findById(id);
+  async getLogById(id: string, organizationId: string): Promise<AuditLogResponse | null> {
+    const log = await this.repository.findById(id, organizationId);
     return this.repository.toResponse(log) as AuditLogResponse | null;
   }
 

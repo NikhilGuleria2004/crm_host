@@ -14,7 +14,7 @@ vi.mock('../../src/db/collections', () => ({
   },
 }));
 
-vi.mock('../../src/storage/mongo-file-storage', () => ({
+vi.mock('../../src/storage/factory', () => ({
   fileStorage: {
     put: vi.fn().mockResolvedValue(undefined),
     get: vi.fn().mockResolvedValue(null),
@@ -43,7 +43,7 @@ vi.mock('../../src/utils/logger', () => ({
 }));
 
 import { reportConsumer } from '../../src/queue/consumers';
-import { fileStorage } from '../../src/storage/mongo-file-storage';
+import { fileStorage } from '../../src/storage/factory';
 
 describe('P17 Report Consumer', () => {
   beforeEach(() => {

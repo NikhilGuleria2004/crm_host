@@ -3,7 +3,7 @@ import { ObjectId } from 'mongodb';
 import { Hono } from 'hono';
 import { createImportsRoutes } from '../src/modules/imports/imports.routes';
 
-vi.mock('../src/storage/mongo-file-storage', () => ({
+vi.mock('../src/storage/factory', () => ({
   fileStorage: {
     put: vi.fn().mockResolvedValue(undefined),
     get: vi.fn().mockResolvedValue(null),
@@ -169,7 +169,7 @@ describe('P26 Imports Routes', () => {
 
   describe('POST /api/v1/imports/:id/preview', () => {
     it('should preview import data', async () => {
-      const mockFileStorage = await import('../src/storage/mongo-file-storage');
+      const mockFileStorage = await import('../src/storage/factory');
       mockFileStorage.fileStorage.get.mockResolvedValue({
         content: Buffer.from('First Name,Last Name,Email\nJohn,Doe,john@example.com'),
         contentType: 'text/csv',
@@ -191,7 +191,7 @@ describe('P26 Imports Routes', () => {
 
   describe('POST /api/v1/imports/:id/start', () => {
     it('should start import processing', async () => {
-      const mockFileStorage = await import('../src/storage/mongo-file-storage');
+      const mockFileStorage = await import('../src/storage/factory');
       mockFileStorage.fileStorage.get.mockResolvedValue({
         content: Buffer.from('First Name,Last Name,Email\nJohn,Doe,john@example.com'),
         contentType: 'text/csv',

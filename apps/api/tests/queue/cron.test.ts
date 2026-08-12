@@ -5,11 +5,11 @@ vi.mock('../../src/db/client', () => ({
   connectDatabase: vi.fn().mockResolvedValue({}),
 }));
 
-vi.mock('../../src/queue/queue', () => ({
-  queue: {
-    register: vi.fn(),
+vi.mock('../../src/queue/factory', () => ({
+  createQueue: () => ({
+    registerConsumer: vi.fn(),
     processAll: vi.fn().mockResolvedValue(3),
-  },
+  }),
 }));
 
 vi.mock('../../src/utils/logger', () => ({

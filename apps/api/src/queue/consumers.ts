@@ -4,7 +4,7 @@ import { WebhookService } from '../modules/webhooks/webhooks.service';
 import { ReportsRepository } from '../modules/reports/reports.repository';
 import type { QueueConsumer } from './types';
 import { collections } from '../db/collections';
-import { fileStorage } from '../storage/mongo-file-storage';
+import { fileStorage } from '../storage/factory';
 import { logger } from '../utils/logger';
 
 export function createWebhookConsumer(): QueueConsumer {

@@ -1,6 +1,6 @@
 import { ExportRepository } from './exports.repository';
-import { fileStorage } from '../../storage/mongo-file-storage';
-import { queue } from '../../queue';
+import { fileStorage } from '../../storage/factory';
+import { createQueue } from '../../queue/factory';
 import type { ExportJobResponse, ExportListResponse, ExportListQuery } from './exports.types';
 
 export class ExportService {
@@ -43,7 +43,7 @@ export class ExportService {
       createdBy: userId,
     });
 
-    await queue.enqueue({
+    await createQueue().enqueue({
       version: 1,
       type: 'export',
       payload: {
@@ -82,7 +82,14 @@ export class ExportService {
     });
   }
 
-  async getFile(key: string): Promise<{ content: Buffer; contentType: string } | null> {
+  async getFile(key: string, organizationId?: string): Promise<{ content: Buffer; contentType: string } | null> {
+    if (organizationId) {
+      const jobId = key.replace(/^exports\//, '').replace(/\.csv$/, '');
+      const job = await this.repository.findById(jobId, organizationId);
+      if (!job || job.fileKey !== key) {
+        return null;
+      }
+    }
     return fileStorage.get(key);
   }
 

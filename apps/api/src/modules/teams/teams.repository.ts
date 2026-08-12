@@ -17,8 +17,11 @@ function toResponse(doc: TeamDocument): TeamResponse {
 }
 
 export class TeamRepository {
-  async findById(id: string): Promise<TeamDocument | null> {
-    const doc = await collections.teams().findOne({ _id: new ObjectId(id) });
+  async findById(id: string, organizationId: string): Promise<TeamDocument | null> {
+    const doc = await collections.teams().findOne({
+      _id: new ObjectId(id),
+      organizationId: new ObjectId(organizationId),
+    });
     return doc as TeamDocument | null;
   }
 
@@ -44,7 +47,7 @@ export class TeamRepository {
     return doc as TeamDocument;
   }
 
-  async update(id: string, input: UpdateTeamInput): Promise<TeamDocument | null> {
+  async update(id: string, organizationId: string, input: UpdateTeamInput): Promise<TeamDocument | null> {
     const now = new Date();
     const update: Record<string, unknown> = { updatedAt: now };
 
@@ -53,12 +56,18 @@ export class TeamRepository {
     if (input.memberIds !== undefined) update.memberIds = input.memberIds.map((id) => new ObjectId(id));
     if (input.managerIds !== undefined) update.managerIds = input.managerIds.map((id) => new ObjectId(id));
 
-    await collections.teams().updateOne({ _id: new ObjectId(id) }, { $set: update });
-    return this.findById(id);
+    await collections.teams().updateOne(
+      { _id: new ObjectId(id), organizationId: new ObjectId(organizationId) },
+      { $set: update }
+    );
+    return this.findById(id, organizationId);
   }
 
-  async delete(id: string): Promise<void> {
-    await collections.teams().deleteOne({ _id: new ObjectId(id) });
+  async delete(id: string, organizationId: string): Promise<void> {
+    await collections.teams().deleteOne({
+      _id: new ObjectId(id),
+      organizationId: new ObjectId(organizationId),
+    });
   }
 
   toResponse(doc: TeamDocument | null): TeamResponse | null {

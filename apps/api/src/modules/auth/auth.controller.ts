@@ -188,11 +188,12 @@ export function createAuthController(service: AuthService) {
     async changePassword(c: any) {
       try {
         const userId = c.get('user')?.id;
-        if (!userId) {
+        const organizationId = c.get('organizationId');
+        if (!userId || !organizationId) {
           return c.json({ error: { code: 'AUTHENTICATION_REQUIRED', message: 'Authentication required' } }, 401);
         }
         const input = toChangePasswordInput(await c.req.json());
-        await service.changePassword(userId, input);
+        await service.changePassword(userId, organizationId, input);
         await auditLog(c, {
           action: 'auth.password_changed',
           entityType: 'user',

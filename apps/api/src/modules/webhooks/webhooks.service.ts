@@ -1,6 +1,6 @@
 import { randomBytes, createHmac } from 'crypto';
 import { WebhookRepository } from './webhooks.repository';
-import { queue } from '../../queue';
+import { createQueue } from '../../queue/factory';
 import { validateWebhookUrl } from '../../utils/ssrf';
 import type { WebhookResponse, WebhookCreateResponse, WebhookDeliveryResponse, CreateWebhookInput, UpdateWebhookInput } from './webhooks.types';
 import type { WebhookDocument } from '../../types/documents';
@@ -69,7 +69,7 @@ export class WebhookService {
     const eventId = randomBytes(8).toString('hex');
     const jobId = `${webhookId}:${eventType}:${Date.now()}`;
 
-    await queue.enqueue({
+    await createQueue().enqueue({
       version: 1,
       type: 'webhook',
       payload: {

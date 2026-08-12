@@ -102,8 +102,11 @@ export class UserRepository {
     return this.findById(id);
   }
 
-  async updatePassword(id: string, passwordHash: string): Promise<void> {
-    await collections.users().updateOne({ _id: new ObjectId(id) }, { $set: { passwordHash, updatedAt: new Date() } });
+  async updatePassword(id: string, organizationId: string, passwordHash: string): Promise<void> {
+    await collections.users().updateOne(
+      { _id: new ObjectId(id), organizationId: new ObjectId(organizationId) },
+      { $set: { passwordHash, updatedAt: new Date() } }
+    );
   }
 
   toResponse(doc: UserDocument | null): UserResponse | null {

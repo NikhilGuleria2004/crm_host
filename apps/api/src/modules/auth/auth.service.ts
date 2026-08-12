@@ -172,7 +172,7 @@ export class AuthService {
   }
 
   async me(userId: string, organizationId: string): Promise<AuthResponse> {
-    const user = await this.userRepository.findById(userId);
+    const user = await this.userRepository.findById(userId, organizationId);
     if (!user) {
       throw new Error('User not found');
     }
@@ -218,19 +218,19 @@ export class AuthService {
       throw new Error('Invalid or expired reset token');
     }
 
-    const user = await this.userRepository.findById(resetToken.userId.toHexString());
+    const user = await this.userRepository.findById(resetToken.userId.toHexString(), resetToken.organizationId.toHexString());
     if (!user) {
       throw new Error('User not found');
     }
 
     const passwordHash = await hashPassword(input.password);
-    await this.userRepository.updatePassword(user._id.toHexString(), passwordHash);
+    await this.userRepository.updatePassword(user._id.toHexString(), user.organizationId.toHexString(), passwordHash);
     await this.authRepository.markPasswordResetTokenUsed(resetToken._id.toHexString());
     await this.sessionRepository.revokeAllUserSessions(user._id.toHexString());
   }
 
-  async changePassword(userId: string, input: ChangePasswordInput): Promise<void> {
-    const user = await this.userRepository.findById(userId);
+  async changePassword(userId: string, organizationId: string, input: ChangePasswordInput): Promise<void> {
+    const user = await this.userRepository.findById(userId, organizationId);
     if (!user) {
       throw new Error('User not found');
     }
@@ -241,6 +241,6 @@ export class AuthService {
     }
 
     const passwordHash = await hashPassword(input.newPassword);
-    await this.userRepository.updatePassword(userId, passwordHash);
+    await this.userRepository.updatePassword(userId, organizationId, passwordHash);
   }
 }

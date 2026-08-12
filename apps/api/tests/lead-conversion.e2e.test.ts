@@ -3,10 +3,10 @@ import { ObjectId } from 'mongodb';
 import { Hono } from 'hono';
 import { createLeadsRoutes } from '../src/modules/leads/leads.routes';
 
-vi.mock('../src/queue', () => ({
-  queue: {
-    enqueue: vi.fn().mockResolvedValue('mock-job-id'),
-  },
+const mockQueue = { enqueue: vi.fn().mockResolvedValue('mock-job-id') };
+
+vi.mock('../src/queue/factory', () => ({
+  createQueue: () => mockQueue,
 }));
 
 function createMockCollection() {
@@ -149,7 +149,8 @@ describe('P20 Lead Conversion E2E', () => {
     expect(mockActivities.insertOne).toHaveBeenCalledTimes(1);
     expect(mockAuditLogs.insertOne).toHaveBeenCalledTimes(1);
 
-    const queue = (await import('../src/queue')).queue;
+    const { createQueue } = await import('../src/queue/factory');
+    const queue = createQueue();
     expect(queue.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
         version: 1,
@@ -184,7 +185,8 @@ describe('P20 Lead Conversion E2E', () => {
     expect(mockActivities.insertOne).toHaveBeenCalledTimes(1);
     expect(mockAuditLogs.insertOne).toHaveBeenCalledTimes(1);
 
-    const queue = (await import('../src/queue')).queue;
+    const { createQueue } = await import('../src/queue/factory');
+    const queue = createQueue();
     expect(queue.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
         version: 1,

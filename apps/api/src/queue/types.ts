@@ -26,6 +26,13 @@ export interface QueueJob {
   updatedAt: Date;
 }
 
+export interface QueueAdapter {
+  enqueue(message: JobMessage): Promise<string>;
+  registerConsumer(consumer: QueueConsumer): void;
+  processNext(): Promise<boolean>;
+  processAll(maxJobs?: number): Promise<number>;
+}
+
 export interface QueueConsumer {
   type: JobType;
   process: (payload: Record<string, unknown>, attempts: number) => Promise<JobResult>;

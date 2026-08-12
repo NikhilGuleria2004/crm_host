@@ -12,6 +12,7 @@ const envSchema = z.object({
   SESSION_SECRET: z.string().min(32),
   COOKIE_DOMAIN: z.string().default('localhost'),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
+  BLOB_READ_WRITE_TOKEN: z.string().optional(),
 });
 
 export const env = envSchema.parse({
@@ -23,4 +24,5 @@ export const env = envSchema.parse({
   SESSION_SECRET: process.env.SESSION_SECRET,
   COOKIE_DOMAIN: process.env.COOKIE_DOMAIN,
   CORS_ORIGIN: process.env.CORS_ORIGIN,
+  BLOB_READ_WRITE_TOKEN: process.env.BLOB_READ_WRITE_TOKEN,
 });

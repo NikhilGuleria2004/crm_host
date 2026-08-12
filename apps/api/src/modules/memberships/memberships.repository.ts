@@ -19,8 +19,11 @@ function toResponse(doc: OrganizationMembershipDocument): OrganizationMembership
 }
 
 export class MembershipRepository {
-  async findById(id: string): Promise<OrganizationMembershipDocument | null> {
-    const doc = await collections.organizationMemberships().findOne({ _id: new ObjectId(id) });
+  async findById(id: string, organizationId: string): Promise<OrganizationMembershipDocument | null> {
+    const doc = await collections.organizationMemberships().findOne({
+      _id: new ObjectId(id),
+      organizationId: new ObjectId(organizationId),
+    });
     return doc as OrganizationMembershipDocument | null;
   }
 
@@ -69,7 +72,7 @@ export class MembershipRepository {
     return doc as OrganizationMembershipDocument;
   }
 
-  async update(id: string, input: UpdateMembershipInput): Promise<OrganizationMembershipDocument | null> {
+  async update(id: string, organizationId: string, input: UpdateMembershipInput): Promise<OrganizationMembershipDocument | null> {
     const now = new Date();
     const update: Record<string, unknown> = { updatedAt: now };
 
@@ -83,13 +86,16 @@ export class MembershipRepository {
       }
     }
 
-    await collections.organizationMemberships().updateOne({ _id: new ObjectId(id) }, { $set: update });
-    return this.findById(id);
+    await collections.organizationMemberships().updateOne(
+      { _id: new ObjectId(id), organizationId: new ObjectId(organizationId) },
+      { $set: update }
+    );
+    return this.findById(id, organizationId);
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(id: string, organizationId: string): Promise<void> {
     await collections.organizationMemberships().updateOne(
-      { _id: new ObjectId(id) },
+      { _id: new ObjectId(id), organizationId: new ObjectId(organizationId) },
       { $set: { status: 'removed', updatedAt: new Date() } }
     );
   }

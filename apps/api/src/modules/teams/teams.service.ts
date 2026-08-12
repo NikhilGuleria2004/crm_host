@@ -9,8 +9,8 @@ export class TeamService {
     return this.repository.toResponse(team) as TeamResponse;
   }
 
-  async getById(id: string): Promise<TeamResponse | null> {
-    const team = await this.repository.findById(id);
+  async getById(id: string, organizationId: string): Promise<TeamResponse | null> {
+    const team = await this.repository.findById(id, organizationId);
     return this.repository.toResponse(team) as TeamResponse | null;
   }
 
@@ -19,12 +19,12 @@ export class TeamService {
     return teams.map((team) => this.repository.toResponse(team) as TeamResponse);
   }
 
-  async update(id: string, input: UpdateTeamInput): Promise<TeamResponse | null> {
-    const team = await this.repository.update(id, input);
+  async update(id: string, organizationId: string, input: UpdateTeamInput): Promise<TeamResponse | null> {
+    const team = await this.repository.update(id, organizationId, input);
     return this.repository.toResponse(team) as TeamResponse | null;
   }
 
-  async delete(id: string): Promise<void> {
-    await this.repository.delete(id);
+  async delete(id: string, organizationId: string): Promise<void> {
+    await this.repository.delete(id, organizationId);
   }
 }

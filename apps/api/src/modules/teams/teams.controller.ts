@@ -44,7 +44,11 @@ export function createTeamsController(service: TeamService) {
 
     async getById(c: any) {
       const id = c.req.param('id');
-      const team = await service.getById(id);
+      const organizationId = c.get('organizationId');
+      if (!organizationId) {
+        return c.json({ error: { code: 'ORGANIZATION_CONTEXT_REQUIRED', message: 'Organization context required' } }, 400);
+      }
+      const team = await service.getById(id, organizationId);
       if (!team) {
         return c.json({ error: { code: 'RESOURCE_NOT_FOUND', message: 'Team not found' } }, 404);
       }
@@ -54,8 +58,12 @@ export function createTeamsController(service: TeamService) {
     async update(c: any) {
       try {
         const id = c.req.param('id');
+        const organizationId = c.get('organizationId');
+        if (!organizationId) {
+          return c.json({ error: { code: 'ORGANIZATION_CONTEXT_REQUIRED', message: 'Organization context required' } }, 400);
+        }
         const input = toUpdateInput(await c.req.json());
-        const team = await service.update(id, input);
+        const team = await service.update(id, organizationId, input);
         if (!team) {
           return c.json({ error: { code: 'RESOURCE_NOT_FOUND', message: 'Team not found' } }, 404);
         }
@@ -73,7 +81,11 @@ export function createTeamsController(service: TeamService) {
 
     async delete(c: any) {
       const id = c.req.param('id');
-      await service.delete(id);
+      const organizationId = c.get('organizationId');
+      if (!organizationId) {
+        return c.json({ error: { code: 'ORGANIZATION_CONTEXT_REQUIRED', message: 'Organization context required' } }, 400);
+      }
+      await service.delete(id, organizationId);
       return c.json({ data: { id, status: 'deleted' } });
     },
   };

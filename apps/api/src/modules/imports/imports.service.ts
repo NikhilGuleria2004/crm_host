@@ -1,7 +1,7 @@
 import { ImportRepository } from './imports.repository';
-import { fileStorage } from '../../storage/mongo-file-storage';
+import { fileStorage } from '../../storage/factory';
 import { hashContent } from '../../utils/crypto';
-import { queue } from '../../queue';
+import { createQueue } from '../../queue/factory';
 import type { ImportJobResponse, ImportListResponse, ImportListQuery, ImportRowResult, ImportPreviewResponse } from './imports.types';
 import type { JobResult } from '../../queue/types';
 
@@ -65,7 +65,7 @@ export class ImportService {
 
     await fileStorage.put(fileKey, file.content, 'text/csv');
 
-    await queue.enqueue({
+    await createQueue().enqueue({
       version: 1,
       type: 'import',
       payload: {
@@ -131,7 +131,7 @@ export class ImportService {
       failedCount: 0,
     });
 
-    await queue.enqueue({
+    await createQueue().enqueue({
       version: 1,
       type: 'import',
       payload: {

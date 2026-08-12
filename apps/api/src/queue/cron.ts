@@ -1,12 +1,13 @@
 import { connectDatabase } from '../db/client';
-import { queue } from './queue';
+import { createQueue } from './factory';
 import { exportConsumer, importConsumer, createWebhookConsumer, outboxConsumer } from './consumers';
 import { logger } from '../utils/logger';
 
-queue.register(exportConsumer);
-queue.register(importConsumer);
-queue.register(createWebhookConsumer());
-queue.register(outboxConsumer);
+const queue = createQueue();
+queue.registerConsumer(exportConsumer);
+queue.registerConsumer(importConsumer);
+queue.registerConsumer(createWebhookConsumer());
+queue.registerConsumer(outboxConsumer);
 
 export default async function handler() {
   try {

@@ -1,2 +1,2 @@
-export { queue } from './queue';
-export type { JobMessage, JobResult, QueueConsumer, QueueJob } from './types';
+export { createQueue } from './factory';
+export type { JobMessage, JobResult, QueueConsumer, QueueJob, QueueAdapter } from './types';

@@ -131,8 +131,11 @@ export class WebhookRepository {
     return docs as WebhookDeliveryDocument[];
   }
 
-  async updateDeliveryStatus(id: string, updates: { status?: 'pending' | 'delivered' | 'failed'; responseCode?: number; responseBody?: string; duration?: number; error?: string; nextRetryAt?: Date }): Promise<void> {
-    await collections.webhookDeliveries().updateOne({ _id: new ObjectId(id) }, { $set: updates });
+  async updateDeliveryStatus(id: string, organizationId: string, updates: { status?: 'pending' | 'delivered' | 'failed'; responseCode?: number; responseBody?: string; duration?: number; error?: string; nextRetryAt?: Date }): Promise<void> {
+    await collections.webhookDeliveries().updateOne(
+      { _id: new ObjectId(id), organizationId: new ObjectId(organizationId) },
+      { $set: updates }
+    );
   }
 
   toResponse(doc: WebhookDocument): WebhookResponse {

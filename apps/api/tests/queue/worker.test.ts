@@ -1,15 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { processBatch, BATCH_SIZE, SLEEP_MS } from '../../src/worker/index';
+
+var mockQueue: any = null;
 
 vi.mock('../../src/db/client', () => ({
   connectDatabase: vi.fn().mockResolvedValue({}),
   closeDatabase: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('../../src/queue', () => ({
-  queue: {
-    register: vi.fn(),
-    processAll: vi.fn().mockResolvedValue(0),
+vi.mock('../../src/queue/queue', () => ({
+  MongoQueue: class {
+    register = mockQueue.register;
+    processAll = mockQueue.processAll;
+    enqueue = vi.fn();
+    processNext = vi.fn();
   },
 }));
 
@@ -31,24 +34,29 @@ vi.mock('../../src/utils/logger', () => ({
 describe('P10 Worker', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.resetModules();
+    mockQueue = {
+      register: vi.fn(),
+      processAll: vi.fn().mockResolvedValue(0),
+    };
   });
 
   it('should connect to database and process jobs', async () => {
-    const { queue } = await import('../../src/queue');
-    vi.mocked(queue.processAll).mockResolvedValueOnce(2);
+    mockQueue.processAll.mockResolvedValueOnce(2);
 
+    const { processBatch, BATCH_SIZE } = await import('../../src/worker/index');
     await processBatch();
 
     const { connectDatabase, closeDatabase } = await import('../../src/db/client');
     expect(connectDatabase).toHaveBeenCalledTimes(1);
-    expect(queue.processAll).toHaveBeenCalledWith(BATCH_SIZE);
+    expect(mockQueue.processAll).toHaveBeenCalledWith(BATCH_SIZE);
     expect(closeDatabase).toHaveBeenCalledTimes(1);
   });
 
   it('should log when jobs are processed', async () => {
-    const { queue } = await import('../../src/queue');
-    vi.mocked(queue.processAll).mockResolvedValueOnce(3);
+    mockQueue.processAll.mockResolvedValueOnce(3);
 
+    const { processBatch } = await import('../../src/worker/index');
     await processBatch();
 
     const { logger } = await import('../../src/utils/logger');
@@ -56,9 +64,9 @@ describe('P10 Worker', () => {
   });
 
   it('should not log when no jobs are processed', async () => {
-    const { queue } = await import('../../src/queue');
-    vi.mocked(queue.processAll).mockResolvedValueOnce(0);
+    mockQueue.processAll.mockResolvedValueOnce(0);
 
+    const { processBatch } = await import('../../src/worker/index');
     await processBatch();
 
     const { logger } = await import('../../src/utils/logger');
@@ -69,6 +77,7 @@ describe('P10 Worker', () => {
     const { connectDatabase } = await import('../../src/db/client');
     vi.mocked(connectDatabase).mockRejectedValueOnce(new Error('connection failed'));
 
+    const { processBatch } = await import('../../src/worker/index');
     await expect(processBatch()).rejects.toThrow('connection failed');
   });
 });

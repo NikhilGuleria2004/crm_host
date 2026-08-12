@@ -20,5 +20,3 @@ export class MongoFileStorage implements FileStorage {
     await collections.files().deleteOne({ _id: key });
   }
 }
-
-export const fileStorage = new MongoFileStorage();

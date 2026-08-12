@@ -111,7 +111,7 @@ export function createReportsController(service: ReportsService) {
         return c.json({ error: { code: 'RESOURCE_NOT_FOUND', message: 'Export file not found' } }, 404);
       }
 
-      const { fileStorage } = await import('../../storage/mongo-file-storage');
+      const { fileStorage } = await import('../../storage/factory');
       const file = await fileStorage.get(job.fileKey);
       if (!file) {
         return c.json({ error: { code: 'RESOURCE_NOT_FOUND', message: 'Export file not found' } }, 404);

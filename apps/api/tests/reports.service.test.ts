@@ -38,10 +38,10 @@ vi.mock('../src/db/collections', () => ({
   },
 }));
 
-vi.mock('../src/queue', () => ({
-  queue: {
+vi.mock('../src/queue/factory', () => ({
+  createQueue: () => ({
     enqueue: vi.fn().mockResolvedValue('queue-job-id'),
-  },
+  }),
 }));
 
 describe('ReportsService', () => {

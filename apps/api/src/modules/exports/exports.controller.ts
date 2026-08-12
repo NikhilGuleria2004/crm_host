@@ -61,7 +61,7 @@ export function createExportsController(service: ExportService) {
         return c.json({ error: { code: 'RESOURCE_NOT_FOUND', message: 'Export file not found' } }, 404);
       }
 
-      const file = await service.getFile(job.fileKey);
+      const file = await service.getFile(job.fileKey, organizationId);
       if (!file) {
         return c.json({ error: { code: 'RESOURCE_NOT_FOUND', message: 'Export file not found' } }, 404);
       }

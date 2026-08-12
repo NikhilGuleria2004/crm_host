@@ -3,7 +3,7 @@ import { LeadRepository } from './leads.repository';
 import type { CreateLeadInput, UpdateLeadInput, LeadResponse, LeadListResponse, LeadListQuery, ConvertLeadInput, ConvertLeadResponse } from './leads.types';
 import { collections } from '../../db/collections';
 import { auditLog } from '../../middleware/audit';
-import { queue } from '../../queue';
+import { createQueue } from '../../queue/factory';
 
 function toObjectId(value: string | undefined | null): ObjectId | undefined {
   if (!value || !/^[0-9a-f]{24}$/i.test(value)) return undefined;
@@ -303,7 +303,7 @@ export class LeadService {
       updatedAt: convertedAt,
     } as any);
 
-    await queue.enqueue({
+    await createQueue().enqueue({
       version: 1,
       type: 'outbox',
       payload: {
