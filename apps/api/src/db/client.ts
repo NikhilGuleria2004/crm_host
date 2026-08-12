@@ -36,6 +36,8 @@ export async function checkDatabaseHealth(): Promise<{ status: 'healthy' | 'unhe
     await database.command({ ping: 1 });
     return { status: 'healthy' };
   } catch (error) {
-    return { status: 'unhealthy', detail: error instanceof Error ? error.message : 'Unknown error' };
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    const sanitized = message.replace(/mongodb(?:\+srv)?:\/\/[^\s]+/gi, 'mongodb://***');
+    return { status: 'unhealthy', detail: sanitized };
   }
 }

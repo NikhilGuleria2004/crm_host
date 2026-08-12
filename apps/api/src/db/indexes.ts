@@ -34,6 +34,8 @@ export async function bootstrapIndexes(): Promise<void> {
   await contacts.createIndex({ organizationId: 1, status: 1 });
   await contacts.createIndex({ organizationId: 1, tags: 1 });
   await contacts.createIndex({ organizationId: 1, emailNormalized: 1 });
+  await contacts.createIndex({ organizationId: 1, source: 1 });
+  await contacts.createIndex({ companyId: 1 });
 
   const companies = db.collection('companies');
   await companies.createIndex({ organizationId: 1, normalizedName: 1 });
@@ -69,6 +71,7 @@ export async function bootstrapIndexes(): Promise<void> {
   await deals.createIndex({ organizationId: 1, expectedCloseDate: 1 });
   await deals.createIndex({ organizationId: 1, createdAt: 1 });
   await deals.createIndex({ organizationId: 1, amount: 1 });
+  await deals.createIndex({ companyId: 1 });
 
   const activities = db.collection('activities');
   await activities.createIndex({ organizationId: 1, occurredAt: 1 });
@@ -76,18 +79,27 @@ export async function bootstrapIndexes(): Promise<void> {
   await activities.createIndex({ organizationId: 1, contactId: 1, occurredAt: 1 });
   await activities.createIndex({ organizationId: 1, companyId: 1, occurredAt: 1 });
   await activities.createIndex({ organizationId: 1, dealId: 1, occurredAt: 1 });
+  await activities.createIndex({ organizationId: 1, leadId: 1, occurredAt: 1 });
+  await activities.createIndex({ dealId: 1 });
 
   const tasks = db.collection('tasks');
   await tasks.createIndex({ organizationId: 1, assignedTo: 1, status: 1 });
   await tasks.createIndex({ organizationId: 1, dueDate: 1 });
   await tasks.createIndex({ organizationId: 1, status: 1, dueDate: 1 });
   await tasks.createIndex({ organizationId: 1, createdAt: 1 });
+  await tasks.createIndex({ organizationId: 1, dealId: 1 });
+  await tasks.createIndex({ organizationId: 1, contactId: 1 });
+  await tasks.createIndex({ organizationId: 1, companyId: 1 });
+  await tasks.createIndex({ organizationId: 1, leadId: 1 });
+  await tasks.createIndex({ dealId: 1 });
 
   const notes = db.collection('notes');
   await notes.createIndex({ organizationId: 1, createdAt: 1 });
   await notes.createIndex({ organizationId: 1, contactId: 1, createdAt: 1 });
   await notes.createIndex({ organizationId: 1, companyId: 1, createdAt: 1 });
   await notes.createIndex({ organizationId: 1, dealId: 1, createdAt: 1 });
+  await notes.createIndex({ organizationId: 1, leadId: 1, createdAt: 1 });
+  await notes.createIndex({ dealId: 1 });
 
   const tags = db.collection('tags');
   await tags.createIndex({ organizationId: 1, normalizedName: 1 }, { unique: true });
@@ -108,6 +120,7 @@ export async function bootstrapIndexes(): Promise<void> {
   const attachments = db.collection('attachments');
   await attachments.createIndex({ organizationId: 1, entityType: 1, entityId: 1 });
   await attachments.createIndex({ organizationId: 1, createdAt: 1 });
+  await attachments.createIndex({ dealId: 1 });
 
   const automations = db.collection('automations');
   await automations.createIndex({ organizationId: 1, createdAt: 1 });

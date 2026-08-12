@@ -21,6 +21,7 @@ const mockLeads = createMockCollection();
 const mockActivities = createMockCollection();
 const mockUsers = createMockCollection();
 const mockPipelineStages = createMockCollection();
+const mockReportJobs = createMockCollection();
 
 vi.mock('../src/db/collections', () => ({
   collections: {
@@ -29,10 +30,17 @@ vi.mock('../src/db/collections', () => ({
     activities: () => mockActivities,
     users: () => mockUsers,
     pipelineStages: () => mockPipelineStages,
+    reportJobs: () => mockReportJobs,
     queueJobs: () => ({
       findOne: vi.fn().mockResolvedValue(null),
       insertOne: vi.fn().mockResolvedValue({ insertedId: new (require('mongodb').ObjectId)() }),
     }),
+  },
+}));
+
+vi.mock('../src/queue', () => ({
+  queue: {
+    enqueue: vi.fn().mockResolvedValue('queue-job-id'),
   },
 }));
 
@@ -189,6 +197,69 @@ describe('ReportsService', () => {
       expect(result[0].emails).toBe(10);
       expect(result[0].meetings).toBe(3);
       expect(result[0].tasks).toBe(2);
+    });
+  });
+
+  describe('createSalesExportJob', () => {
+    it('should create a report job and enqueue processing', async () => {
+      const orgId = new ObjectId().toHexString();
+      const userId = new ObjectId().toHexString();
+      const insertedId = new ObjectId().toHexString();
+
+      mockReportJobs.insertOne.mockResolvedValue({ insertedId: new ObjectId(insertedId) } as any);
+      mockReportJobs.findOne.mockResolvedValueOnce({
+        _id: new ObjectId(insertedId),
+        organizationId: new ObjectId(orgId),
+        type: 'sales',
+        status: 'pending',
+        params: {},
+        createdBy: new ObjectId(userId),
+        createdAt: new Date(),
+      });
+
+      const result = await service.createSalesExportJob(orgId, userId, {});
+
+      expect(result.type).toBe('sales');
+      expect(result.status).toBe('pending');
+      expect(result.id).toBe(insertedId);
+      expect(mockReportJobs.insertOne).toHaveBeenCalledTimes(1);
+      expect(mockReportJobs.findOne).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('getExportJob', () => {
+    it('should return job by id', async () => {
+      const orgId = new ObjectId().toHexString();
+      const jobId = new ObjectId().toHexString();
+
+      mockReportJobs.findOne.mockResolvedValue({
+        _id: new ObjectId(jobId),
+        organizationId: new ObjectId(orgId),
+        type: 'sales',
+        status: 'completed',
+        fileKey: 'reports/test.csv',
+        params: {},
+        createdBy: new ObjectId(),
+        createdAt: new Date(),
+        completedAt: new Date(),
+      });
+
+      const result = await service.getExportJob(jobId, orgId);
+
+      expect(result).toBeDefined();
+      expect(result?.status).toBe('completed');
+      expect(result?.fileKey).toBe('reports/test.csv');
+    });
+
+    it('should return null when job does not exist', async () => {
+      mockReportJobs.findOne.mockResolvedValue(null);
+      const result = await service.getExportJob('nonexistent', new ObjectId().toHexString());
+      expect(result).toBeNull();
+    });
+
+    it('should return null for invalid object id', async () => {
+      const result = await service.getExportJob('invalid', new ObjectId().toHexString());
+      expect(result).toBeNull();
     });
   });
 });

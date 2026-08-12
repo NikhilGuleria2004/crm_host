@@ -1,6 +1,6 @@
 import { ObjectId } from 'mongodb';
 
-export type JobType = 'export' | 'import' | 'webhook' | 'outbox';
+export type JobType = 'export' | 'import' | 'webhook' | 'outbox' | 'report';
 
 export interface JobMessage {
   version: 1;

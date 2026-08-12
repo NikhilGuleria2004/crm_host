@@ -180,7 +180,18 @@ export class ActivityRepository {
 
   async getUserName(userId: ObjectId): Promise<string | undefined> {
     const doc = await collections.users().findOne({ _id: userId });
-    return doc ? `${(doc as any).firstName} ${(doc as any).lastName}` : undefined;
+    return doc ? `${(doc as any).firstName} ${(doc as any).lastName || ''}`.trim() : undefined;
+  }
+
+  async getUserNames(userIds: ObjectId[]): Promise<Map<string, string>> {
+    const docs = await collections.users()
+      .find({ _id: { $in: userIds } })
+      .toArray();
+    const map = new Map<string, string>();
+    for (const doc of docs) {
+      map.set(doc._id.toHexString(), `${(doc as any).firstName} ${(doc as any).lastName || ''}`.trim());
+    }
+    return map;
   }
 
   toResponse(doc: ActivityDocument | null, ownerName?: string): ActivityResponse | null {

@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { requestId, securityHeaders, requestLogger, cors } from './middleware';
+import { requestId, securityHeaders, requestLogger, cors, errorHandler } from './middleware';
 import { authenticate } from './middleware';
 import { organizationContext } from './middleware';
 import { rateLimiter } from './middleware';
@@ -34,26 +34,37 @@ import { createIntegrationsRoutes } from './modules/integrations';
 
 const app = new Hono();
 
+app.use('*', errorHandler());
 app.use('*', requestId());
 app.use('*', requestLogger());
 app.use('*', securityHeaders());
 app.use('*', cors());
 
-app.get('/health', async (c) => {
-  const dbHealth = await checkDatabaseHealth();
-  if (dbHealth.status === 'healthy') {
-    return c.json({ status: 'ok', database: dbHealth });
-  }
-  return c.json({ status: 'degraded', database: dbHealth }, 503);
-});
+app.get('/health', (c) => c.json({ status: 'ok' }));
 
 app.get('/ready', async (c) => {
   const dbHealth = await checkDatabaseHealth();
-  if (dbHealth.status === 'healthy') {
-    return c.json({ status: 'ready', database: dbHealth });
-  }
-  return c.json({ status: 'not ready', database: dbHealth }, 503);
+  const configHealth = checkConfigHealth();
+  const isHealthy = dbHealth.status === 'healthy' && configHealth.status === 'healthy';
+  return c.json(
+    { status: isHealthy ? 'ready' : 'not ready', database: dbHealth, config: configHealth },
+    isHealthy ? 200 : 503
+  );
 });
+
+function checkConfigHealth() {
+  const required = ['MONGODB_URI', 'MONGODB_DATABASE', 'SESSION_SECRET', 'CORS_ORIGIN'];
+  const missing: string[] = [];
+  for (const key of required) {
+    if (!process.env[key] || process.env[key].trim() === '') {
+      missing.push(key);
+    }
+  }
+  if (missing.length > 0) {
+    return { status: 'unhealthy' as const, missing };
+  }
+  return { status: 'healthy' as const };
+}
 
 app.get('/', (c) => c.text('CRM API'));
 

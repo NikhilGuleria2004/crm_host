@@ -30,6 +30,7 @@ export type {
   PasswordResetTokenDocument,
   OrganizationMembershipDocument,
   RolePermissionDocument,
+  ReportJobDocument,
 } from './documents';
 
 export {

@@ -99,6 +99,9 @@ describe('P21 Tasks Routes', () => {
     mockRolePermissions.find.mockReturnValue({
       toArray: vi.fn().mockResolvedValue([{ permission: 'tasks.*', scope: 'ORGANIZATION' }]),
     } as any);
+    mockUsers.find.mockReturnValue({
+      toArray: vi.fn().mockResolvedValue([{ _id: new ObjectId(assignedToId), firstName: 'Jane', lastName: 'Smith' }]),
+    } as any);
     mockTasks.findOne.mockImplementation((query: any) => {
       if (query._id?.toString() === taskId) {
         if (query.organizationId && query.organizationId.toString() !== orgAId.toString()) {

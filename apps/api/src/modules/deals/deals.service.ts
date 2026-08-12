@@ -34,19 +34,31 @@ export class DealService {
       direction,
     });
 
-    const data = await Promise.all(
-      result.data.map(async (doc) => {
-        const [pipeline, stage, company, contact, owner, summary] = await Promise.all([
-          this.repository.getPipeline(doc.pipelineId.toHexString()),
-          this.repository.getStage(doc.stageId.toHexString()),
-          doc.companyId ? this.repository.getCompany(doc.companyId.toHexString()) : Promise.resolve(null),
-          doc.contactId ? this.repository.getContact(doc.contactId.toHexString()) : Promise.resolve(null),
-          this.repository.getUser(doc.ownerId.toHexString()),
-          this.repository.getSummary(doc._id.toHexString()),
-        ]);
-        return this.repository.toResponse(doc, pipeline ?? undefined, stage ?? undefined, company ?? undefined, contact ?? undefined, owner ?? undefined, summary);
-      })
-    );
+    const pipelineIds = result.data.map((doc) => doc.pipelineId.toHexString()).filter((id, index, self) => self.indexOf(id) === index);
+    const stageIds = result.data.map((doc) => doc.stageId.toHexString()).filter((id, index, self) => self.indexOf(id) === index);
+    const companyIds = result.data.map((doc) => doc.companyId?.toHexString()).filter((id): id is string => id !== undefined);
+    const contactIds = result.data.map((doc) => doc.contactId?.toHexString()).filter((id): id is string => id !== undefined);
+    const ownerIds = result.data.map((doc) => doc.ownerId.toHexString()).filter((id, index, self) => self.indexOf(id) === index);
+    const dealIds = result.data.map((doc) => doc._id.toHexString());
+
+    const [pipelines, stages, companies, contacts, owners, summaries] = await Promise.all([
+      pipelineIds.length > 0 ? this.repository.getPipelines(pipelineIds) : Promise.resolve(new Map()),
+      stageIds.length > 0 ? this.repository.getStages(stageIds) : Promise.resolve(new Map()),
+      companyIds.length > 0 ? this.repository.getCompanies(companyIds) : Promise.resolve(new Map()),
+      contactIds.length > 0 ? this.repository.getContacts(contactIds) : Promise.resolve(new Map()),
+      ownerIds.length > 0 ? this.repository.getUsers(ownerIds) : Promise.resolve(new Map()),
+      dealIds.length > 0 ? this.repository.getSummaries(dealIds) : Promise.resolve(new Map()),
+    ]);
+
+    const data = result.data.map((doc) => {
+      const pipeline = pipelines.get(doc.pipelineId.toHexString());
+      const stage = stages.get(doc.stageId.toHexString());
+      const company = doc.companyId ? companies.get(doc.companyId.toHexString()) : undefined;
+      const contact = doc.contactId ? contacts.get(doc.contactId.toHexString()) : undefined;
+      const owner = owners.get(doc.ownerId.toHexString());
+      const summary = summaries.get(doc._id.toHexString());
+      return this.repository.toResponse(doc, pipeline ?? undefined, stage ?? undefined, company ?? undefined, contact ?? undefined, owner ?? undefined, summary);
+    });
 
     const filteredData = data.filter((deal): deal is DealResponse => deal !== null);
 

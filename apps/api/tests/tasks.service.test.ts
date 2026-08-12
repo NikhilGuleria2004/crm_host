@@ -15,6 +15,7 @@ function createMockRepository(): vi.Mocked<TaskRepository> {
     update: vi.fn(),
     softDelete: vi.fn(),
     getUser: vi.fn(),
+    getUsers: vi.fn(),
     toResponse: vi.fn(),
     toDetailResponse: vi.fn(),
   } as any;
@@ -84,7 +85,7 @@ describe('P21 TaskService', () => {
         nextCursor: null,
         hasMore: false,
       });
-      repository.getUser.mockResolvedValue({ id: assignedToId, name: 'Jane Smith' });
+      repository.getUsers.mockResolvedValue(new Map([[assignedToId, { id: assignedToId, name: 'Jane Smith' }]]));
 
       const result = await service.list(orgId, { limit: 25 });
 

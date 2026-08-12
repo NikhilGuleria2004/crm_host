@@ -18,6 +18,7 @@ vi.mock('../../src/queue/consumers', () => ({
   importConsumer: { type: 'import', process: vi.fn() },
   createWebhookConsumer: vi.fn(() => ({ type: 'webhook', process: vi.fn() })),
   outboxConsumer: { type: 'outbox', process: vi.fn() },
+  reportConsumer: { type: 'report', process: vi.fn() },
 }));
 
 vi.mock('../../src/utils/logger', () => ({

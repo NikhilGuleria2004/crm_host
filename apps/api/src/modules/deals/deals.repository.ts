@@ -239,6 +239,117 @@ export class DealRepository {
     return { activities, tasks, notes, attachments };
   }
 
+  async getSummaries(dealIds: string[]): Promise<Map<string, { activities: number; tasks: number; notes: number; attachments: number }>> {
+    const objectIds = dealIds.map((id) => new ObjectId(id));
+    const match = { dealId: { $in: objectIds }, deletedAt: { $exists: false } };
+    const group = {
+      _id: '$dealId',
+      count: { $sum: 1 },
+    };
+
+    const [activityResults, taskResults, noteResults, attachmentResults] = await Promise.all([
+      collections.activities().aggregate([{ $match: match }, { $group: group }]).toArray(),
+      collections.tasks().aggregate([{ $match: match }, { $group: group }]).toArray(),
+      collections.notes().aggregate([{ $match: match }, { $group: group }]).toArray(),
+      collections.attachments().aggregate([{ $match: match }, { $group: group }]).toArray(),
+    ]);
+
+    const map = new Map<string, { activities: number; tasks: number; notes: number; attachments: number }>();
+    for (const dealId of dealIds) {
+      map.set(dealId, { activities: 0, tasks: 0, notes: 0, attachments: 0 });
+    }
+
+    for (const result of activityResults) {
+      const entry = map.get(result._id.toHexString());
+      if (entry) entry.activities = result.count || 0;
+    }
+    for (const result of taskResults) {
+      const entry = map.get(result._id.toHexString());
+      if (entry) entry.tasks = result.count || 0;
+    }
+    for (const result of noteResults) {
+      const entry = map.get(result._id.toHexString());
+      if (entry) entry.notes = result.count || 0;
+    }
+    for (const result of attachmentResults) {
+      const entry = map.get(result._id.toHexString());
+      if (entry) entry.attachments = result.count || 0;
+    }
+
+    return map;
+  }
+
+  async getPipelines(pipelineIds: string[]): Promise<Map<string, { id: string; name: string }>> {
+    const objectIds = pipelineIds.map((id) => new ObjectId(id));
+    const docs = await collections.pipelines()
+      .find({ _id: { $in: objectIds } })
+      .toArray();
+    const map = new Map<string, { id: string; name: string }>();
+    for (const doc of docs) {
+      map.set(doc._id.toHexString(), { id: doc._id.toHexString(), name: (doc as any).name });
+    }
+    return map;
+  }
+
+  async getStages(stageIds: string[]): Promise<Map<string, DealStageInfo>> {
+    const objectIds = stageIds.map((id) => new ObjectId(id));
+    const docs = await collections.pipelineStages()
+      .find({ _id: { $in: objectIds } })
+      .toArray();
+    const map = new Map<string, DealStageInfo>();
+    for (const doc of docs) {
+      map.set(doc._id.toHexString(), {
+        id: doc._id.toHexString(),
+        name: (doc as any).name,
+        order: (doc as any).order,
+        probability: (doc as any).probability,
+        isWon: (doc as any).isWon,
+        isLost: (doc as any).isLost,
+      });
+    }
+    return map;
+  }
+
+  async getCompanies(companyIds: string[]): Promise<Map<string, { id: string; name: string }>> {
+    const objectIds = companyIds.map((id) => new ObjectId(id));
+    const docs = await collections.companies()
+      .find({ _id: { $in: objectIds } })
+      .toArray();
+    const map = new Map<string, { id: string; name: string }>();
+    for (const doc of docs) {
+      map.set(doc._id.toHexString(), { id: doc._id.toHexString(), name: (doc as any).name });
+    }
+    return map;
+  }
+
+  async getContacts(contactIds: string[]): Promise<Map<string, { id: string; name: string }>> {
+    const objectIds = contactIds.map((id) => new ObjectId(id));
+    const docs = await collections.contacts()
+      .find({ _id: { $in: objectIds } })
+      .toArray();
+    const map = new Map<string, { id: string; name: string }>();
+    for (const doc of docs) {
+      const firstName = (doc as any).firstName || '';
+      const lastName = (doc as any).lastName || '';
+      map.set(doc._id.toHexString(), { id: doc._id.toHexString(), name: `${firstName} ${lastName}`.trim() });
+    }
+    return map;
+  }
+
+  async getUsers(userIds: string[]): Promise<Map<string, { id: string; name: string }>> {
+    const objectIds = userIds.map((id) => new ObjectId(id));
+    const docs = await collections.users()
+      .find({ _id: { $in: objectIds } })
+      .toArray();
+    const map = new Map<string, { id: string; name: string }>();
+    for (const doc of docs) {
+      const firstName = (doc as any).firstName || '';
+      const lastName = (doc as any).lastName || '';
+      map.set(doc._id.toHexString(), { id: doc._id.toHexString(), name: `${firstName} ${lastName}`.trim() });
+    }
+    return map;
+  }
+
   toResponse(doc: DealDocument, pipeline?: { id: string; name: string }, stage?: DealStageInfo, company?: { id: string; name: string }, contact?: { id: string; name: string }, owner?: { id: string; name: string }, summary?: { activities: number; tasks: number; notes: number; attachments: number }): DealResponse {
     return {
       id: doc._id.toHexString(),

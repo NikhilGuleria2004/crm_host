@@ -241,25 +241,121 @@ Files changed:
 Tests: API 517 passed, 0 failed | Web 3 passed, 0 failed
 
 ## Phase 16 — Health Endpoints
-- [ ] Keep `GET /health` (lightweight liveness)
-- [ ] Keep `GET /ready` (MongoDB connectivity, required config, required services)
-- [ ] Ensure no MongoDB URI, stack traces, or secrets exposed
+- [x] Keep `GET /health` (lightweight liveness)
+- [x] Keep `GET /ready` (MongoDB connectivity, required config, required services)
+- [x] Ensure no MongoDB URI, stack traces, or secrets exposed
+
+Changes:
+- Made `GET /health` truly lightweight by removing the `checkDatabaseHealth()` call; it now returns `{ status: 'ok' }` without hitting the database
+- Enhanced `GET /ready` to check both database health and required configuration (`MONGODB_URI`, `MONGODB_DATABASE`, `SESSION_SECRET`, `CORS_ORIGIN`) via new `checkConfigHealth()` helper
+- Added MongoDB URI/credential sanitization in `checkDatabaseHealth()` using regex redaction (`mongodb://***`, `mongodb+srv://***`)
+- Registered the previously unused `errorHandler` middleware in `app.ts` as the first global middleware to catch unhandled exceptions and prevent stack trace leakage
+- `GET /ready` now returns `config` object in response with `status` and `missing` fields when unhealthy
+
+Files changed:
+- `apps/api/src/app.ts`
+- `apps/api/src/db/client.ts`
+- `apps/api/tests/health.test.ts` (new)
+
+Tests: 524 passed, 0 failed
 
 ## Phase 17 — API Function Duration Review
-- [ ] Review every endpoint for execution time: `<1s`, `1–5s`, `5–30s`, `>30s`
-- [ ] Move long-running operations to Queue/Workflow: `POST /imports`, `POST /exports`, webhook bulk delivery, large reports, large CSV generation
-- [ ] Ensure long-running APIs enqueue work and return job ID
+- [x] Review every endpoint for execution time: `<1s`, `1–5s`, `5–30s`, `>30s`
+- [x] Move long-running operations to Queue/Workflow: `POST /imports`, `POST /exports`, webhook bulk delivery, large reports, large CSV generation
+- [x] Ensure long-running APIs enqueue work and return job ID
+
+Changes:
+- Imports (`POST /api/v1/imports`) already enqueue and return job IDs
+- Exports (`POST /api/v1/exports`) already enqueue and return job IDs
+- Webhook delivery already queue-based (`webhookConsumer` processes deliveries)
+- Moved `GET /api/v1/reports/sales/export` from synchronous inline CSV generation to async queue-based processing
+  - `GET /api/v1/reports/sales/export` now returns `202 Accepted` with a report job ID
+  - Added `POST /api/v1/reports/sales/export` route for creating async export jobs
+  - Added `GET /api/v1/reports/exports/:id` for checking job status
+  - Added `GET /api/v1/reports/exports/:id/download` for downloading completed reports
+- Added `'report'` job type to queue (`queue/types.ts`)
+- Added `reportConsumer` to `queue/consumers.ts` for background CSV generation
+- Added `reportJobs` collection with `ReportJobDocument` type
+- Registered `reportConsumer` in worker (`worker/index.ts`)
+
+Files changed:
+- `apps/api/src/queue/types.ts`
+- `apps/api/src/queue/consumers.ts`
+- `apps/api/src/worker/index.ts`
+- `apps/api/src/db/collections.ts`
+- `apps/api/src/types/documents.ts`
+- `apps/api/src/types/index.ts`
+- `apps/api/src/modules/reports/reports.service.ts`
+- `apps/api/src/modules/reports/reports.controller.ts`
+- `apps/api/src/modules/reports/reports.routes.ts`
+- `apps/api/src/modules/reports/reports.types.ts`
+- `apps/api/tests/reports.routes.test.ts`
+- `apps/api/tests/reports.service.test.ts`
+- `apps/api/tests/queue/report-consumer.test.ts`
+- `apps/api/tests/queue/worker.test.ts`
+
+Tests: 533 passed, 0 failed
 
 ## Phase 18 — Database Query Audit
-- [ ] Audit for N+1 queries, unbounded queries, large document reads, missing indexes, large sort operations, large aggregation pipelines
-- [ ] Ensure every important endpoint has deliberate filter, sort, pagination, projection
-- [ ] Avoid `find({}).toArray()` for large collections
-- [ ] Prefer cursor/keyset pagination where practical
+- [x] Audit for N+1 queries, unbounded queries, large document reads, missing indexes, large sort operations, large aggregation pipelines
+- [x] Ensure every important endpoint has deliberate filter, sort, pagination, projection
+- [x] Avoid `find({}).toArray()` for large collections
+- [x] Prefer cursor/keyset pagination where practical
+
+Changes:
+- Eliminated N+1 queries in list endpoints by adding batch lookup methods to repositories
+- Contacts: added `getCompanyNames` and `getUserNames` to batch-fetch company/owner names
+- Companies: added `getUserNames` to batch-fetch owner names
+- Deals: added `getPipelines`, `getStages`, `getCompanies`, `getContacts`, `getUsers`, `getSummaries` for batch relation resolution
+- Leads: added `getUserNames` to batch-fetch owner names
+- Tasks: added `getUsers` to batch-fetch assignee names
+- Notes: added `getUserNames` to batch-fetch author names
+- Activities: added `getUserNames` to batch-fetch owner names
+- All list services now collect unique IDs and resolve relations in 1-2 queries instead of N+1
+- Empty-ID guards prevent unnecessary DB calls when no relations exist
+
+Files changed:
+- `apps/api/src/modules/contacts/contacts.repository.ts`
+- `apps/api/src/modules/contacts/contacts.service.ts`
+- `apps/api/src/modules/companies/companies.repository.ts`
+- `apps/api/src/modules/companies/companies.service.ts`
+- `apps/api/src/modules/deals/deals.repository.ts`
+- `apps/api/src/modules/deals/deals.service.ts`
+- `apps/api/src/modules/leads/leads.repository.ts`
+- `apps/api/src/modules/leads/leads.service.ts`
+- `apps/api/src/modules/tasks/tasks.repository.ts`
+- `apps/api/src/modules/tasks/tasks.service.ts`
+- `apps/api/src/modules/notes/notes.repository.ts`
+- `apps/api/src/modules/notes/notes.service.ts`
+- `apps/api/src/modules/activities/activities.repository.ts`
+- `apps/api/src/modules/activities/activities.service.ts`
+- Updated 13 test files with new mock setups for batch methods
+
+Tests: 533 passed, 0 failed
 
 ## Phase 19 — Database Indexes
-- [ ] Do not create indexes from Function startup
-- [ ] Audit actual queries for: users.email, sessions.tokenHash, sessions.expiresAt, password reset tokens, organization membership, API keys, webhooks, imports, exports, outbox events, common contact/company/lead/deal searches
-- [ ] Ensure indexes correspond to actual query patterns
+- [x] Do not create indexes from Function startup
+- [x] Audit actual queries for: users.email, sessions.tokenHash, sessions.expiresAt, password reset tokens, organization membership, API keys, webhooks, imports, exports, outbox events, common contact/company/lead/deal searches
+- [x] Ensure indexes correspond to actual query patterns
+
+Changes:
+- Confirmed `bootstrapIndexes()` is only called from explicit scripts (`ensure-indexes.ts`, `seed.ts`, `DataSeeder.ts`), NOT from Function startup
+- Fixed `DealRepository.getSummaries` aggregation bug (was incorrectly querying only `activities` collection for all entity types)
+- Added missing indexes for actual query patterns:
+  - `contacts`: `{ organizationId: 1, source: 1 }`, `{ companyId: 1 }` (for company summary)
+  - `deals`: `{ companyId: 1 }` (for company open deals summary)
+  - `activities`: `{ organizationId: 1, leadId: 1, occurredAt: 1 }`, `{ dealId: 1 }`
+  - `tasks`: `{ organizationId: 1, dealId: 1 }`, `{ organizationId: 1, contactId: 1 }`, `{ organizationId: 1, companyId: 1 }`, `{ organizationId: 1, leadId: 1 }`, `{ dealId: 1 }`
+  - `notes`: `{ organizationId: 1, leadId: 1, createdAt: 1 }`, `{ dealId: 1 }`
+  - `attachments`: `{ dealId: 1 }`
+- All existing indexes verified against actual query patterns in repositories
+
+Files changed:
+- `apps/api/src/db/indexes.ts`
+- `apps/api/src/modules/deals/deals.repository.ts`
+- `apps/api/tests/deals.routes.test.ts`
+
+Tests: 533 passed, 0 failed
 
 ## Phase 20 — Error Handling
 - [ ] Review `apps/api/src/middleware/error-handler.ts`

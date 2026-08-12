@@ -89,6 +89,9 @@ describe('P16 Notes Routes', () => {
     mockRolePermissions.find.mockReturnValue({
       toArray: vi.fn().mockResolvedValue([{ permission: 'notes.*', scope: 'ORGANIZATION' }]),
     } as any);
+    mockUsers.find.mockReturnValue({
+      toArray: vi.fn().mockResolvedValue([{ _id: new ObjectId(authorId), firstName: 'John', lastName: 'Doe' }]),
+    } as any);
     mockNotes.findOne.mockImplementation((query: any) => {
       if (query._id?.toString() === noteId && !query.organizationId) {
         return Promise.resolve({ ...mockNote, _id: new ObjectId(noteId) });

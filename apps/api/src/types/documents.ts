@@ -491,3 +491,15 @@ export interface OrganizationMembershipDocument {
   createdAt: Date;
   updatedAt: Date;
 }
+
+export interface ReportJobDocument {
+  _id: ObjectId;
+  organizationId: ObjectId;
+  type: 'sales';
+  params: Record<string, unknown>;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  fileKey?: string;
+  createdBy: ObjectId;
+  createdAt: Date;
+  completedAt?: Date;
+}

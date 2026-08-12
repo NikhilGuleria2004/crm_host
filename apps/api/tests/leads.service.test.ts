@@ -18,6 +18,7 @@ function createMockRepository(): vi.Mocked<LeadRepository> {
     softDelete: vi.fn(),
     findByIds: vi.fn(),
     getUserName: vi.fn(),
+    getUserNames: vi.fn(),
     toResponse: vi.fn(),
     toDetailResponse: vi.fn(),
   } as any;
@@ -70,7 +71,7 @@ describe('P17 LeadService', () => {
         nextCursor: null,
         hasMore: false,
       });
-      repository.getUserName.mockResolvedValue('Jane Smith');
+      repository.getUserNames.mockResolvedValue(new Map([[ownerId, 'Jane Smith']]));
       repository.toResponse.mockReturnValue({
         id: leadId,
         firstName: 'John',

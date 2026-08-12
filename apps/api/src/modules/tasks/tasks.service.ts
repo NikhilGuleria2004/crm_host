@@ -33,12 +33,13 @@ export class TaskService {
       direction,
     });
 
-    const data = await Promise.all(
-      result.data.map(async (doc) => {
-        const assignedTo = doc.assignedTo ? await this.repository.getUser(doc.assignedTo.toHexString()) : undefined;
-        return this.repository.toResponse(doc, assignedTo || undefined);
-      })
-    );
+    const assignedToIds = result.data.map((doc) => doc.assignedTo?.toHexString()).filter((id): id is string => id !== undefined);
+    const assignedToMap = assignedToIds.length > 0 ? await this.repository.getUsers(assignedToIds) : new Map();
+
+    const data = result.data.map((doc) => {
+      const assignedTo = doc.assignedTo ? assignedToMap.get(doc.assignedTo.toHexString()) : undefined;
+      return this.repository.toResponse(doc, assignedTo || undefined);
+    });
 
     const filteredData = data.filter((task): task is TaskResponse => task !== null);
 

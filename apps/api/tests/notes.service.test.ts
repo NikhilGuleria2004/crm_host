@@ -17,6 +17,7 @@ function createMockRepository(): vi.Mocked<NoteRepository> {
     softDelete: vi.fn(),
     findByIds: vi.fn(),
     getUserName: vi.fn(),
+    getUserNames: vi.fn(),
     toResponse: vi.fn(),
     toDetailResponse: vi.fn(),
   } as any;
@@ -59,7 +60,7 @@ describe('P16 NoteService', () => {
         nextCursor: null,
         hasMore: false,
       });
-      repository.getUserName.mockResolvedValue('John Doe');
+      repository.getUserNames.mockResolvedValue(new Map([[authorId, 'John Doe']]));
       repository.toResponse.mockReturnValue({
         id: noteId,
         title: 'Customer requirements',

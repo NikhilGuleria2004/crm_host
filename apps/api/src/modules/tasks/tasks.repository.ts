@@ -173,6 +173,20 @@ export class TaskRepository {
     return { id: doc._id.toHexString(), name: `${firstName} ${lastName}`.trim() };
   }
 
+  async getUsers(userIds: string[]): Promise<Map<string, { id: string; name: string }>> {
+    const objectIds = userIds.map((id) => new ObjectId(id));
+    const docs = await collections.users()
+      .find({ _id: { $in: objectIds } })
+      .toArray();
+    const map = new Map<string, { id: string; name: string }>();
+    for (const doc of docs) {
+      const firstName = (doc as any).firstName || '';
+      const lastName = (doc as any).lastName || '';
+      map.set(doc._id.toHexString(), { id: doc._id.toHexString(), name: `${firstName} ${lastName}`.trim() });
+    }
+    return map;
+  }
+
   toResponse(doc: TaskDocument, assignedTo?: { id: string; name: string }): TaskResponse {
     return {
       id: doc._id.toHexString(),

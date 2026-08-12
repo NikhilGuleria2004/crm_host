@@ -29,3 +29,12 @@ export interface PipelineReportResponse {
   dealCount: number;
   dealValue: number;
 }
+
+export interface ReportExportJobResponse {
+  id: string;
+  type: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  fileKey?: string;
+  createdAt: string;
+  completedAt?: string;
+}

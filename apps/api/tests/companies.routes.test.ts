@@ -109,6 +109,9 @@ describe('P14 Companies Routes', () => {
     mockRolePermissions.find.mockReturnValue({
       toArray: vi.fn().mockResolvedValue([{ permission: 'companies.*', scope: 'ORGANIZATION' }]),
     } as any);
+    mockUsers.find.mockReturnValue({
+      toArray: vi.fn().mockResolvedValue([{ _id: new ObjectId(ownerId), firstName: 'John', lastName: 'Doe' }]),
+    } as any);
     mockCompanies.findOne.mockImplementation((query: any) => {
       if (query._id?.toString() === companyId && !query.organizationId) {
         return Promise.resolve({ ...mockCompanyData });

@@ -1,12 +1,13 @@
 import { connectDatabase, closeDatabase } from '../db/client';
 import { queue } from '../queue';
-import { exportConsumer, importConsumer, createWebhookConsumer, outboxConsumer } from '../queue/consumers';
+import { exportConsumer, importConsumer, createWebhookConsumer, outboxConsumer, reportConsumer } from '../queue/consumers';
 import { logger } from '../utils/logger';
 
 queue.register(exportConsumer);
 queue.register(importConsumer);
 queue.register(createWebhookConsumer());
 queue.register(outboxConsumer);
+queue.register(reportConsumer);
 
 export const BATCH_SIZE = parseInt(process.env.QUEUE_BATCH_SIZE || '10', 10);
 export const SLEEP_MS = parseInt(process.env.QUEUE_SLEEP_MS || '5000', 10);

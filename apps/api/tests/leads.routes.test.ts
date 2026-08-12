@@ -119,6 +119,9 @@ describe('P17 Leads Routes', () => {
     mockRolePermissions.find.mockReturnValue({
       toArray: vi.fn().mockResolvedValue([{ permission: 'leads.*', scope: 'ORGANIZATION' }]),
     } as any);
+    mockUsers.find.mockReturnValue({
+      toArray: vi.fn().mockResolvedValue([{ _id: new ObjectId(ownerId), firstName: 'John', lastName: 'Doe' }]),
+    } as any);
     mockLeads.findOne.mockImplementation((query: any) => {
       if (query._id?.toString() === leadId && !query.organizationId) {
         return Promise.resolve({ ...mockLeadData, _id: new ObjectId(leadId) });

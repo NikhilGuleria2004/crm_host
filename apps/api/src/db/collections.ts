@@ -34,5 +34,6 @@ export const collections = {
   rolePermissions: () => getCollection<import('../types').RolePermissionDocument>('role_permissions'),
   rateLimits: () => getCollection<{ _id: string; count: number; resetAt: number }>('rate_limits'),
   files: () => getCollection<{ _id: string; content: Buffer; contentType: string; updatedAt: Date }>('files'),
+  reportJobs: () => getCollection<import('../types').ReportJobDocument>('report_jobs'),
   queueJobs: () => getCollection<import('../queue/types').QueueJob>('queue_jobs'),
 };

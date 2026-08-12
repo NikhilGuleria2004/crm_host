@@ -225,9 +225,31 @@ export class ContactRepository {
     return doc ? (doc as any).name : undefined;
   }
 
+  async getCompanyNames(companyIds: ObjectId[]): Promise<Map<string, string>> {
+    const docs = await collections.companies()
+      .find({ _id: { $in: companyIds } })
+      .toArray();
+    const map = new Map<string, string>();
+    for (const doc of docs) {
+      map.set(doc._id.toHexString(), (doc as any).name);
+    }
+    return map;
+  }
+
   async getUserName(userId: ObjectId): Promise<string | undefined> {
     const doc = await collections.users().findOne({ _id: userId });
-    return doc ? `${(doc as any).firstName} ${(doc as any).lastName}` : undefined;
+    return doc ? `${(doc as any).firstName} ${(doc as any).lastName || ''}`.trim() : undefined;
+  }
+
+  async getUserNames(userIds: ObjectId[]): Promise<Map<string, string>> {
+    const docs = await collections.users()
+      .find({ _id: { $in: userIds } })
+      .toArray();
+    const map = new Map<string, string>();
+    for (const doc of docs) {
+      map.set(doc._id.toHexString(), `${(doc as any).firstName} ${(doc as any).lastName || ''}`.trim());
+    }
+    return map;
   }
 
   toResponse(doc: ContactDocument | null, companyName?: string, ownerName?: string): ContactResponse | null {

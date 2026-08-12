@@ -30,12 +30,13 @@ export class LeadService {
       direction,
     });
 
-    const data = await Promise.all(
-      result.data.map(async (doc) => {
-        const ownerName = doc.ownerId ? await this.repository.getUserName(doc.ownerId) : undefined;
-        return this.repository.toResponse(doc, ownerName);
-      })
-    );
+    const ownerIds = result.data.map((doc) => doc.ownerId).filter((id): id is ObjectId => id !== undefined && id !== null);
+    const ownerNames = ownerIds.length > 0 ? await this.repository.getUserNames(ownerIds) : new Map();
+
+    const data = result.data.map((doc) => {
+      const ownerName = doc.ownerId ? ownerNames.get(doc.ownerId.toHexString()) : undefined;
+      return this.repository.toResponse(doc, ownerName);
+    });
 
     const filteredData = data.filter((lead): lead is LeadResponse => lead !== null);
 

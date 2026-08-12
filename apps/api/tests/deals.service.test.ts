@@ -21,6 +21,12 @@ function createMockRepository(): vi.Mocked<DealRepository> {
     getContact: vi.fn(),
     getUser: vi.fn(),
     getSummary: vi.fn(),
+    getPipelines: vi.fn(),
+    getStages: vi.fn(),
+    getCompanies: vi.fn(),
+    getContacts: vi.fn(),
+    getUsers: vi.fn(),
+    getSummaries: vi.fn(),
     toResponse: vi.fn(),
     toDetailResponse: vi.fn(),
   } as any;
@@ -75,12 +81,12 @@ describe('P19 DealService', () => {
         nextCursor: null,
         hasMore: false,
       });
-      repository.getPipeline.mockResolvedValue({ id: pipelineId, name: 'Sales Pipeline' });
-      repository.getStage.mockResolvedValue({ id: stageId, name: 'New', order: 0, probability: 10, isWon: false, isLost: false });
-      repository.getCompany.mockResolvedValue({ id: companyId, name: 'Acme Corp' });
-      repository.getContact.mockResolvedValue({ id: contactId, name: 'John Doe' });
-      repository.getUser.mockResolvedValue({ id: ownerId, name: 'Jane Smith' });
-      repository.getSummary.mockResolvedValue({ activities: 5, tasks: 3, notes: 2, attachments: 1 });
+      repository.getPipelines.mockResolvedValue(new Map([[pipelineId, { id: pipelineId, name: 'Sales Pipeline' }]]));
+      repository.getStages.mockResolvedValue(new Map([[stageId, { id: stageId, name: 'New', order: 0, probability: 10, isWon: false, isLost: false }]]));
+      repository.getCompanies.mockResolvedValue(new Map([[companyId, { id: companyId, name: 'Acme Corp' }]]));
+      repository.getContacts.mockResolvedValue(new Map([[contactId, { id: contactId, name: 'John Doe' }]]));
+      repository.getUsers.mockResolvedValue(new Map([[ownerId, { id: ownerId, name: 'Jane Smith' }]]));
+      repository.getSummaries.mockResolvedValue(new Map([[dealId, { activities: 5, tasks: 3, notes: 2, attachments: 1 }]]));
       repository.toResponse.mockReturnValue({
         id: dealId,
         name: 'Enterprise Contract',

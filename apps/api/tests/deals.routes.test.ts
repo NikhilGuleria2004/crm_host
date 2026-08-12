@@ -125,6 +125,33 @@ describe('P19 Deals Routes', () => {
     mockRolePermissions.find.mockReturnValue({
       toArray: vi.fn().mockResolvedValue([{ permission: 'deals.*', scope: 'ORGANIZATION' }]),
     } as any);
+    mockPipelines.find.mockReturnValue({
+      toArray: vi.fn().mockResolvedValue([{ _id: new ObjectId(pipelineId), name: 'Sales Pipeline' }]),
+    } as any);
+    mockPipelineStages.find.mockReturnValue({
+      toArray: vi.fn().mockResolvedValue([{ _id: new ObjectId(stageId), name: 'New', order: 0, probability: 10, isWon: false, isLost: false }]),
+    } as any);
+    mockCompanies.find.mockReturnValue({
+      toArray: vi.fn().mockResolvedValue([{ _id: new ObjectId(companyId), name: 'Acme Corp' }]),
+    } as any);
+    mockContacts.find.mockReturnValue({
+      toArray: vi.fn().mockResolvedValue([{ _id: new ObjectId(contactId), firstName: 'John', lastName: 'Doe' }]),
+    } as any);
+    mockUsers.find.mockReturnValue({
+      toArray: vi.fn().mockResolvedValue([{ _id: new ObjectId(ownerId), firstName: 'Jane', lastName: 'Smith' }]),
+    } as any);
+    mockActivities.aggregate.mockReturnValue({
+      toArray: vi.fn().mockResolvedValue([{ _id: new ObjectId(dealId), count: 5 }]),
+    } as any);
+    mockTasks.aggregate.mockReturnValue({
+      toArray: vi.fn().mockResolvedValue([{ _id: new ObjectId(dealId), count: 3 }]),
+    } as any);
+    mockNotes.aggregate.mockReturnValue({
+      toArray: vi.fn().mockResolvedValue([{ _id: new ObjectId(dealId), count: 2 }]),
+    } as any);
+    mockAttachments.aggregate.mockReturnValue({
+      toArray: vi.fn().mockResolvedValue([{ _id: new ObjectId(dealId), count: 1 }]),
+    } as any);
     mockDeals.findOne.mockImplementation((query: any) => {
       if (query._id?.toString() === dealId && !query.organizationId) {
         return Promise.resolve({ ...mockDealData, _id: new ObjectId(dealId) });

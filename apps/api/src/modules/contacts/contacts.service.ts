@@ -29,15 +29,19 @@ export class ContactService {
       direction,
     });
 
-    const data = await Promise.all(
-      result.data.map(async (doc) => {
-        const [companyName, ownerName] = await Promise.all([
-          doc.companyId ? this.repository.getCompanyName(doc.companyId) : Promise.resolve(undefined),
-          doc.ownerId ? this.repository.getUserName(doc.ownerId) : Promise.resolve(undefined),
-        ]);
-        return this.repository.toResponse(doc, companyName, ownerName);
-      })
-    );
+    const companyIds = result.data.map((doc) => doc.companyId).filter((id): id is ObjectId => id !== undefined && id !== null);
+    const ownerIds = result.data.map((doc) => doc.ownerId).filter((id): id is ObjectId => id !== undefined && id !== null);
+
+    const [companyNames, ownerNames] = await Promise.all([
+      companyIds.length > 0 ? this.repository.getCompanyNames(companyIds) : Promise.resolve(new Map()),
+      ownerIds.length > 0 ? this.repository.getUserNames(ownerIds) : Promise.resolve(new Map()),
+    ]);
+
+    const data = result.data.map((doc) => {
+      const companyName = doc.companyId ? companyNames.get(doc.companyId.toHexString()) : undefined;
+      const ownerName = doc.ownerId ? ownerNames.get(doc.ownerId.toHexString()) : undefined;
+      return this.repository.toResponse(doc, companyName, ownerName);
+    });
 
     const filteredData = data.filter((contact): contact is ContactResponse => contact !== null);
 

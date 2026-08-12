@@ -1,6 +1,7 @@
 import { ObjectId } from 'mongodb';
 import { WebhookRepository } from '../modules/webhooks/webhooks.repository';
 import { WebhookService } from '../modules/webhooks/webhooks.service';
+import { ReportsRepository } from '../modules/reports/reports.repository';
 import type { QueueConsumer } from './types';
 import { collections } from '../db/collections';
 import { fileStorage } from '../storage/mongo-file-storage';
@@ -156,6 +157,90 @@ export const outboxConsumer: QueueConsumer = {
       return { success: true };
     } catch (error) {
       logger.error({ error: error instanceof Error ? error.message : String(error) }, 'Outbox consumer failed');
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  },
+};
+
+export const reportConsumer: QueueConsumer = {
+  type: 'report',
+  async process(payload, _attempts) {
+    try {
+      const jobId = payload.jobId as string;
+      const organizationId = payload.organizationId as string;
+      const reportType = payload.reportType as string;
+      const params = payload.params as Record<string, unknown>;
+
+      let jobObjectId: ObjectId;
+      try {
+        jobObjectId = new ObjectId(jobId);
+      } catch {
+        return { success: false, error: 'Report job not found' };
+      }
+
+      const reportJobs = collections.reportJobs();
+      const doc = await reportJobs.findOne({ _id: jobObjectId });
+      if (!doc) {
+        return { success: false, error: 'Report job not found' };
+      }
+
+      const repository = new ReportsRepository();
+      let csv: string;
+
+      if (reportType === 'sales') {
+        const from = params.from ? new Date(params.from as string) : undefined;
+        const to = params.to ? new Date(params.to as string) : undefined;
+        const ownerId = params.ownerId as string | undefined;
+        const pipelineId = params.pipelineId as string | undefined;
+        const data = await repository.getSalesReport(organizationId, { from, to, ownerId, pipelineId });
+
+        const headers = ['Metric', 'Value'];
+        const rows = [
+          ['Revenue', String(data.revenue)],
+          ['Won Deals', String(data.wonDeals)],
+          ['Lost Deals', String(data.lostDeals)],
+          ['Average Deal Size', String(data.averageDealSize)],
+          ['Win Rate (%)', String(data.winRate)],
+        ];
+
+        const escape = (value: string) => value.includes(',') || value.includes('"') || value.includes('\n')
+          ? `"${value.replace(/"/g, '""')}"`
+          : value;
+
+        csv = [headers.map(escape).join(','), ...rows.map((row) => row.map(escape).join(','))].join('\n');
+      } else {
+        throw new Error(`Unsupported report type: ${reportType}`);
+      }
+
+      const fileKey = `reports/${jobId}.csv`;
+      await fileStorage.put(fileKey, Buffer.from(csv), 'text/csv');
+
+      await reportJobs.updateOne(
+        { _id: jobObjectId },
+        {
+          $set: {
+            status: 'completed',
+            fileKey,
+            completedAt: new Date(),
+          },
+        }
+      );
+
+      return { success: true };
+    } catch (error) {
+      logger.error({ error: error instanceof Error ? error.message : String(error) }, 'Report consumer failed');
+      try {
+        const jobId = payload.jobId as string;
+        if (jobId && /^[0-9a-fA-F]{24}$/.test(jobId)) {
+          const reportJobs = collections.reportJobs();
+          await reportJobs.updateOne(
+            { _id: new ObjectId(jobId) },
+            { $set: { status: 'failed', lastError: error instanceof Error ? error.message : String(error) } }
+          );
+        }
+      } catch {
+        // ignore status update failure
+      }
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   },

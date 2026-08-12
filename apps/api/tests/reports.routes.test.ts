@@ -27,6 +27,7 @@ const mockLeads = createMockCollection();
 const mockActivities = createMockCollection();
 const mockPipelineStages = createMockCollection();
 const mockRolePermissions = createMockCollection();
+const mockReportJobs = createMockCollection();
 
 vi.mock('../src/db/collections', () => ({
   collections: {
@@ -38,6 +39,7 @@ vi.mock('../src/db/collections', () => ({
     activities: () => mockActivities,
     pipelineStages: () => mockPipelineStages,
     rolePermissions: () => mockRolePermissions,
+    reportJobs: () => mockReportJobs,
     queueJobs: () => ({
       findOne: vi.fn().mockResolvedValue(null),
       insertOne: vi.fn().mockResolvedValue({ insertedId: new (require('mongodb').ObjectId)() }),
@@ -204,19 +206,24 @@ describe('P31 Reports Routes', () => {
     });
   });
 
-  describe('GET /api/v1/reports/sales/export', () => {
-    it('should return CSV export', async () => {
+  describe('POST /api/v1/reports/sales/export', () => {
+    it('should enqueue export job and return job ID', async () => {
+      const jobId = new ObjectId().toHexString();
+      mockReportJobs.insertOne.mockResolvedValue({ insertedId: new ObjectId(jobId) } as any);
+      mockReportJobs.findOne.mockResolvedValueOnce({
+        _id: new ObjectId(jobId),
+        organizationId: new ObjectId(orgAId),
+        type: 'sales',
+        status: 'pending',
+        params: {},
+        createdBy: new ObjectId(userId),
+        createdAt: new Date(),
+      });
+
       mockRolePermissions.find.mockReturnValue({
         toArray: vi.fn().mockResolvedValue([
           { permission: 'reports.read', scope: 'ORGANIZATION' },
           { permission: 'reports.export', scope: 'ORGANIZATION' },
-        ]),
-      } as any);
-
-      mockDeals.aggregate.mockReturnValue({
-        toArray: vi.fn().mockResolvedValue([
-          { _id: 'won', count: 10, total: 5000000 },
-          { _id: 'lost', count: 5, total: 2000000 },
         ]),
       } as any);
 
@@ -226,12 +233,45 @@ describe('P31 Reports Routes', () => {
           { permission: 'reports.export', scope: 'ORGANIZATION' },
         ],
       });
-      const res = await app.request('/api/v1/reports/sales/export');
+      const res = await app.request('/api/v1/reports/sales/export', {
+        method: 'POST',
+      });
+      expect(res.status).toBe(202);
+      const json = await res.json();
+      expect(json.data.type).toBe('sales');
+      expect(json.data.status).toBe('pending');
+      expect(json.data.id).toBeDefined();
+    });
+  });
+
+  describe('GET /api/v1/reports/exports/:id', () => {
+    it('should return report job status', async () => {
+      const jobId = new ObjectId().toHexString();
+      mockReportJobs.findOne.mockResolvedValue({
+        _id: new ObjectId(jobId),
+        organizationId: new ObjectId(orgAId),
+        type: 'sales',
+        status: 'completed',
+        fileKey: 'reports/test.csv',
+        params: {},
+        createdBy: new ObjectId(userId),
+        createdAt: new Date(),
+        completedAt: new Date(),
+      });
+
+      const app = createAppWithAuth();
+      const res = await app.request(`/api/v1/reports/exports/${jobId}`);
       expect(res.status).toBe(200);
-      expect(res.headers.get('Content-Type')).toBe('text/csv');
-      const text = await res.text();
-      expect(text).toContain('Revenue');
-      expect(text).toContain('5000000');
+      const json = await res.json();
+      expect(json.data.status).toBe('completed');
+      expect(json.data.fileKey).toBe('reports/test.csv');
+    });
+
+    it('should return 404 for missing job', async () => {
+      mockReportJobs.findOne.mockResolvedValue(null);
+      const app = createAppWithAuth();
+      const res = await app.request('/api/v1/reports/exports/nonexistent');
+      expect(res.status).toBe(404);
     });
   });
 });

@@ -15,7 +15,9 @@ export function createReportsRoutes() {
   app.get('/pipeline', authorize(REPORTS_PERMISSIONS.read), controller.pipeline);
   app.get('/leads', authorize(REPORTS_PERMISSIONS.read), controller.leads);
   app.get('/activity', authorize(REPORTS_PERMISSIONS.read), controller.activity);
-  app.get('/sales/export', authorize(REPORTS_PERMISSIONS.export), controller.exportSales);
+  app.post('/sales/export', authorize(REPORTS_PERMISSIONS.export), controller.exportSales);
+  app.get('/exports/:id', authorize(REPORTS_PERMISSIONS.read), controller.getExportStatus);
+  app.get('/exports/:id/download', authorize(REPORTS_PERMISSIONS.read), controller.downloadExport);
 
   return app;
 }

@@ -17,6 +17,7 @@ function createMockCollection() {
 }
 
 const mockContacts = createMockCollection();
+const mockCompanies = createMockCollection();
 const mockUsers = createMockCollection();
 const mockAuditLogs = createMockCollection();
 const mockRolePermissions = createMockCollection();
@@ -24,6 +25,7 @@ const mockRolePermissions = createMockCollection();
 vi.mock('../src/db/collections', () => ({
   collections: {
     contacts: () => mockContacts,
+    companies: () => mockCompanies,
     users: () => mockUsers,
     auditLogs: () => mockAuditLogs,
     rolePermissions: () => mockRolePermissions,
@@ -57,6 +59,12 @@ describe('P25 FilterEngine Integration', () => {
     vi.clearAllMocks();
     mockRolePermissions.find.mockReturnValue({
       toArray: vi.fn().mockResolvedValue([{ permission: 'contacts.*', scope: 'ORGANIZATION' }]),
+    } as any);
+    mockCompanies.find.mockReturnValue({
+      toArray: vi.fn().mockResolvedValue([{ _id: new ObjectId(), name: 'Acme Corp' }]),
+    } as any);
+    mockUsers.find.mockReturnValue({
+      toArray: vi.fn().mockResolvedValue([{ _id: new ObjectId(userId), firstName: 'John', lastName: 'Doe' }]),
     } as any);
     mockContacts.find.mockReturnValue({
       sort: vi.fn().mockReturnValue({

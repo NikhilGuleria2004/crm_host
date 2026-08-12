@@ -17,6 +17,7 @@ function createMockRepository(): vi.Mocked<ActivityRepository> {
     softDelete: vi.fn(),
     findByIds: vi.fn(),
     getUserName: vi.fn(),
+    getUserNames: vi.fn(),
     toResponse: vi.fn(),
     toDetailResponse: vi.fn(),
   } as any;
@@ -63,7 +64,7 @@ describe('P15 ActivityService', () => {
         nextCursor: null,
         hasMore: false,
       });
-      repository.getUserName.mockResolvedValue('John Doe');
+      repository.getUserNames.mockResolvedValue(new Map([[ownerId, 'John Doe']]));
       repository.toResponse.mockReturnValue({
         id: activityId,
         type: 'call',

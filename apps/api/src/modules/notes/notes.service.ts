@@ -27,12 +27,13 @@ export class NoteService {
       direction,
     });
 
-    const data = await Promise.all(
-      result.data.map(async (doc) => {
-        const authorName = doc.authorId ? await this.repository.getUserName(doc.authorId) : undefined;
-        return this.repository.toResponse(doc, authorName);
-      })
-    );
+    const authorIds = result.data.map((doc) => doc.authorId).filter((id): id is ObjectId => id !== undefined && id !== null);
+    const authorNames = authorIds.length > 0 ? await this.repository.getUserNames(authorIds) : new Map();
+
+    const data = result.data.map((doc) => {
+      const authorName = doc.authorId ? authorNames.get(doc.authorId.toHexString()) : undefined;
+      return this.repository.toResponse(doc, authorName);
+    });
 
     const filteredData = data.filter((note): note is NoteResponse => note !== null);
 
