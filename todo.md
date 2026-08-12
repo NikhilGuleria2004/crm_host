@@ -523,7 +523,7 @@ Changes:
 Files changed:
 - `docs/worker-migration.md` (new)
 
-Tests: 572 passed, 0 failed
+Tests: 572 passed, 0 failed 
 
 ## Phase 27 — Scheduled Jobs
 - [ ] Determine if worker periodically checks: outbox events, expired sessions, cleanup, scheduled work
