@@ -2,6 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { WebhookService } from '../../src/modules/webhooks/webhooks.service';
 import type { WebhookRepository } from '../../src/modules/webhooks/webhooks.repository';
 
+vi.mock('../../src/utils/logger', () => ({
+  logger: {
+    info: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
 function createMockRepository(): vi.Mocked<WebhookRepository> {
   return {
     create: vi.fn(),

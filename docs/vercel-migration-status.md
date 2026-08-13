@@ -86,7 +86,7 @@ index.ts   -> Re-exports node.ts for backward compatibility
      "routes": [{ "src": "/(.*)", "dest": "src/vercel.ts" }]
    }
    ```
-3. **`apps/api/.vercelignore`** — Excludes `node_modules`, `tests`, `dist`, `Dockerfile`, `docs`, etc.
+3. **`apps/api/.vercelignore`** — Excludes `node_modules`, `tests`, `dist`, `Dockerfile`, `docs`, etc. (legacy Docker files remain in repo but are excluded from Vercel builds)
 4. **`.gitignore`** — Added `.vercel/` to prevent committing local Vercel config and env vars.
 5. **Vercel project created** — `nikhil-gulerias-projects/api` with root directory `apps/api`.
 
@@ -189,7 +189,6 @@ export async function connectDatabase(): Promise<Db> {
 **Connection reuse:** Pass — module-level singleton ensures one connection per Function instance. No per-request `client.close()`.
 
 **No connection explosion:** Pass — `closeDatabase()` is only called in:
-- `worker/index.ts` — on worker shutdown
 - `node.ts` — on graceful shutdown (SIGTERM/SIGINT)
 - `scripts/seed.ts` and `scripts/DataSeeder.ts` — after seeding completes
 - **Not called in any request handler or middleware**

@@ -13,8 +13,14 @@ export function createWebhookConsumer(): QueueConsumer {
 
   return {
     type: 'webhook',
-    async process(payload, attempts) {
-      return service.processWebhookDelivery(payload, attempts);
+    async process(payload, _attempts) {
+      const jobId = payload.jobId as string;
+      const eventId = payload.eventId as string;
+      const requestId = payload.requestId as string | undefined;
+      logger.info({ jobId, eventId, requestId, consumer: 'webhook' }, 'Webhook consumer started');
+      const result = await service.processWebhookDelivery(payload, _attempts);
+      logger.info({ jobId, eventId, requestId, success: result.success, error: result.error, consumer: 'webhook' }, 'Webhook consumer finished');
+      return result;
     },
   };
 }
@@ -22,13 +28,16 @@ export function createWebhookConsumer(): QueueConsumer {
 export const exportConsumer: QueueConsumer = {
   type: 'export',
   async process(payload, _attempts) {
+    const jobId = payload.jobId as string;
+    const requestId = payload.requestId as string | undefined;
+    logger.info({ jobId, requestId, consumer: 'export' }, 'Export consumer started');
     try {
-      const jobId = payload.jobId as string;
       const fields = payload.fields as string[];
 
       const exportJobs = collections.exportJobs();
       const doc = await exportJobs.findOne({ _id: new ObjectId(jobId) });
       if (!doc) {
+        logger.error({ jobId, requestId, consumer: 'export', error: 'Export job not found' }, 'Export consumer failed');
         return { success: false, error: 'Export job not found' };
       }
 
@@ -69,9 +78,10 @@ export const exportConsumer: QueueConsumer = {
         }
       );
 
+      logger.info({ jobId, requestId, consumer: 'export', rows: rows.length }, 'Export consumer finished');
       return { success: true };
     } catch (error) {
-      logger.error({ error: error instanceof Error ? error.message : String(error) }, 'Export consumer failed');
+      logger.error({ jobId, requestId, consumer: 'export', error: error instanceof Error ? error.message : String(error) }, 'Export consumer failed');
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   },
@@ -80,18 +90,22 @@ export const exportConsumer: QueueConsumer = {
 export const importConsumer: QueueConsumer = {
   type: 'import',
   async process(payload, _attempts) {
+    const jobId = payload.jobId as string;
+    const requestId = payload.requestId as string | undefined;
+    logger.info({ jobId, requestId, consumer: 'import' }, 'Import consumer started');
     try {
-      const jobId = payload.jobId as string;
       const fileKey = payload.fileKey as string;
 
       const importJobs = collections.importJobs();
       const doc = await importJobs.findOne({ _id: new ObjectId(jobId) });
       if (!doc) {
+        logger.error({ jobId, requestId, consumer: 'import', error: 'Import job not found' }, 'Import consumer failed');
         return { success: false, error: 'Import job not found' };
       }
 
       const file = await fileStorage.get(fileKey);
       if (!file) {
+        logger.error({ jobId, requestId, consumer: 'import', error: 'Import file not found' }, 'Import consumer failed');
         return { success: false, error: 'Import file not found' };
       }
 
@@ -129,9 +143,10 @@ export const importConsumer: QueueConsumer = {
         }
       );
 
+      logger.info({ jobId, requestId, consumer: 'import', rows: rows.length }, 'Import consumer finished');
       return { success: true };
     } catch (error) {
-      logger.error({ error: error instanceof Error ? error.message : String(error) }, 'Import consumer failed');
+      logger.error({ jobId, requestId, consumer: 'import', error: error instanceof Error ? error.message : String(error) }, 'Import consumer failed');
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   },
@@ -140,6 +155,9 @@ export const importConsumer: QueueConsumer = {
 export const outboxConsumer: QueueConsumer = {
   type: 'outbox',
   async process(payload, _attempts) {
+    const jobId = payload.jobId as string;
+    const requestId = payload.requestId as string | undefined;
+    logger.info({ jobId, requestId, consumer: 'outbox' }, 'Outbox consumer started');
     try {
       const eventType = payload.type as string;
       const eventPayload = payload.payload as Record<string, unknown>;
@@ -151,12 +169,13 @@ export const outboxConsumer: QueueConsumer = {
 
       const webhookService = new WebhookService(new WebhookRepository());
       for (const webhook of webhooks) {
-        await webhookService.enqueueDelivery(webhook._id.toHexString(), organizationId, eventType, eventPayload);
+        await webhookService.enqueueDelivery(webhook._id.toHexString(), organizationId, eventType, eventPayload, requestId);
       }
 
+      logger.info({ jobId, requestId, consumer: 'outbox', webhooks: webhooks.length }, 'Outbox consumer finished');
       return { success: true };
     } catch (error) {
-      logger.error({ error: error instanceof Error ? error.message : String(error) }, 'Outbox consumer failed');
+      logger.error({ jobId, requestId, consumer: 'outbox', error: error instanceof Error ? error.message : String(error) }, 'Outbox consumer failed');
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   },
@@ -165,8 +184,10 @@ export const outboxConsumer: QueueConsumer = {
 export const reportConsumer: QueueConsumer = {
   type: 'report',
   async process(payload, _attempts) {
+    const jobId = payload.jobId as string;
+    const requestId = payload.requestId as string | undefined;
+    logger.info({ jobId, requestId, consumer: 'report' }, 'Report consumer started');
     try {
-      const jobId = payload.jobId as string;
       const organizationId = payload.organizationId as string;
       const reportType = payload.reportType as string;
       const params = payload.params as Record<string, unknown>;
@@ -175,12 +196,14 @@ export const reportConsumer: QueueConsumer = {
       try {
         jobObjectId = new ObjectId(jobId);
       } catch {
+        logger.error({ jobId, requestId, consumer: 'report', error: 'Report job not found' }, 'Report consumer failed');
         return { success: false, error: 'Report job not found' };
       }
 
       const reportJobs = collections.reportJobs();
       const doc = await reportJobs.findOne({ _id: jobObjectId });
       if (!doc) {
+        logger.error({ jobId, requestId, consumer: 'report', error: 'Report job not found' }, 'Report consumer failed');
         return { success: false, error: 'Report job not found' };
       }
 
@@ -226,9 +249,10 @@ export const reportConsumer: QueueConsumer = {
         }
       );
 
+      logger.info({ jobId, requestId, consumer: 'report' }, 'Report consumer finished');
       return { success: true };
     } catch (error) {
-      logger.error({ error: error instanceof Error ? error.message : String(error) }, 'Report consumer failed');
+      logger.error({ jobId, requestId, consumer: 'report', error: error instanceof Error ? error.message : String(error) }, 'Report consumer failed');
       try {
         const jobId = payload.jobId as string;
         if (jobId && /^[0-9a-fA-F]{24}$/.test(jobId)) {

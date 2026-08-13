@@ -4,9 +4,14 @@ import { Hono } from 'hono';
 import { createWebhooksRoutes } from '../src/modules/webhooks/webhooks.routes';
 
 function createMockCollection() {
+  const toArray = vi.fn().mockResolvedValue([]);
+  const limit = vi.fn().mockReturnValue({ toArray });
+  const sort = vi.fn().mockReturnValue({ limit, toArray });
+  const find = vi.fn().mockImplementation(() => ({ sort, limit, toArray }));
+
   return {
     findOne: vi.fn(),
-    find: vi.fn(),
+    find,
     countDocuments: vi.fn(),
     aggregate: vi.fn(),
     updateOne: vi.fn(),
@@ -133,6 +138,33 @@ describe('P37 Webhooks Routes', () => {
       const json = await res.json();
       expect(json.data.url).toBe('https://example.com/webhook');
       expect(json.data.secret).toBeDefined();
+    });
+
+    it('should return existing webhook if duplicate is requested', async () => {
+      const existingWebhook = {
+        _id: new ObjectId(webhookId),
+        organizationId: new ObjectId(orgAId),
+        url: 'https://example.com/webhook',
+        events: ['contact.created'],
+        secret: 'existing_secret',
+        status: 'active',
+        createdBy: new ObjectId(userId),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      mockWebhooks.findOne.mockResolvedValueOnce(existingWebhook);
+
+      const app = createAppWithAuth();
+      const res = await app.request('/api/v1/webhooks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: 'https://example.com/webhook', events: ['contact.created'], status: 'active' }),
+      });
+      expect(res.status).toBe(201);
+      const json = await res.json();
+      expect(json.data.url).toBe('https://example.com/webhook');
+      expect(json.data.secret).toBe('existing_secret');
+      expect(mockWebhooks.insertOne).not.toHaveBeenCalled();
     });
 
     it('should return 403 without webhooks.create permission', async () => {

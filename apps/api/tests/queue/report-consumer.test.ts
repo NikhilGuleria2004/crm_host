@@ -38,6 +38,7 @@ vi.mock('../../src/modules/reports/reports.repository', () => ({
 
 vi.mock('../../src/utils/logger', () => ({
   logger: {
+    info: vi.fn(),
     error: vi.fn(),
   },
 }));

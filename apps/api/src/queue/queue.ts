@@ -25,34 +25,42 @@ export class MongoQueue {
   async enqueue(message: JobMessage): Promise<string> {
     const type = message.type;
     const jobId = message.payload.jobId as string | undefined;
-    
+
     if (!jobId) {
       throw new Error('JobMessage payload must include jobId for idempotency');
     }
 
-    const existing = await collections.queueJobs().findOne({
-      type,
-      'payload.jobId': jobId,
-      status: { $in: ['pending', 'processing'] },
-    });
-
-    if (existing) {
-      return existing._id.toHexString();
-    }
-
     const now = new Date();
-    const result = await collections.queueJobs().insertOne({
-      type,
-      payload: message.payload,
-      status: 'pending',
-      attempts: 0,
-      maxAttempts: 3,
-      availableAt: now,
-      createdAt: now,
-      updatedAt: now,
-    } as any);
+    try {
+      const result = await collections.queueJobs().insertOne({
+        type,
+        payload: message.payload,
+        status: 'pending',
+        attempts: 0,
+        maxAttempts: 3,
+        availableAt: now,
+        createdAt: now,
+        updatedAt: now,
+      } as any);
 
-    return result.insertedId.toHexString();
+      return result.insertedId.toHexString();
+    } catch (error: any) {
+      if (error.code !== 11000) {
+        throw error;
+      }
+
+      const existing = await collections.queueJobs().findOne({
+        type,
+        'payload.jobId': jobId,
+        status: { $in: ['pending', 'processing'] },
+      });
+
+      if (existing) {
+        return existing._id.toHexString();
+      }
+
+      throw error;
+    }
   }
 
   async processNext(): Promise<boolean> {

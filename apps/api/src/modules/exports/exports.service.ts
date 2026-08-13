@@ -1,7 +1,10 @@
 import { ExportRepository } from './exports.repository';
 import { fileStorage } from '../../storage/factory';
 import { createQueue } from '../../queue/factory';
+import { hashContent } from '../../utils/crypto';
 import type { ExportJobResponse, ExportListResponse, ExportListQuery } from './exports.types';
+
+const EXPORT_DEDUP_WINDOW_MS = 5 * 60 * 1000;
 
 export class ExportService {
   constructor(private repository: ExportRepository) {}
@@ -34,13 +37,22 @@ export class ExportService {
     return this.repository.toResponse(doc);
   }
 
-  async createJob(organizationId: string, userId: string, entity: string, fields: string[], filters?: Record<string, unknown>): Promise<ExportJobResponse> {
+  async createJob(organizationId: string, userId: string, entity: string, fields: string[], filters?: Record<string, unknown>, requestId?: string): Promise<ExportJobResponse> {
+    const filtersKey = JSON.stringify(filters || {});
+    const contentHash = hashContent(`${entity}:${fields.sort().join(',')}:${filtersKey}`);
+
+    const existing = await this.repository.findDuplicate(organizationId, contentHash, EXPORT_DEDUP_WINDOW_MS);
+    if (existing) {
+      return this.repository.toResponse(existing);
+    }
+
     const doc = await this.repository.create({
       organizationId,
       entity,
       filters: filters || {},
       fields,
       createdBy: userId,
+      contentHash,
     });
 
     await createQueue().enqueue({
@@ -52,6 +64,7 @@ export class ExportService {
         entity,
         fields,
         filters,
+        requestId,
       },
     });
 

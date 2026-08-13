@@ -89,7 +89,7 @@ export function createReportsController(service: ReportsService) {
         to: to ? new Date(to) : undefined,
         ownerId: ownerId || undefined,
         pipelineId: pipelineId || undefined,
-      });
+      }, c.get('requestId'));
       return c.json({ data: job }, 202);
     },
 

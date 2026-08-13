@@ -87,7 +87,7 @@ export function createImportsController(service: ImportService) {
         const job = await service.createJob(organizationId, user.id, entity, {
           name: file.name,
           content,
-        });
+        }, c.get('requestId'));
 
         return c.json({ data: job }, 201);
       } catch (error) {
@@ -146,7 +146,7 @@ export function createImportsController(service: ImportService) {
           return c.json({ error: { code: 'INVALID_STATE', message: 'Import job is not in pending state' } }, 400);
         }
 
-        await service.startImport(id, organizationId, input.mapping);
+        await service.startImport(id, organizationId, input.mapping, c.get('requestId'));
         const updatedJob = await service.getById(id, organizationId);
         return c.json({ data: updatedJob });
       } catch (error) {

@@ -17,24 +17,16 @@ export class MongoRateLimitStore implements RateLimitStore {
 
     const result = await collections.rateLimits().findOneAndUpdate(
       { _id: key, resetAt: { $gt: now } },
-      { $inc: { count: 1 } },
-      { upsert: false, returnDocument: 'after' }
+      { $inc: { count: 1 }, $setOnInsert: { resetAt } },
+      { upsert: true, returnDocument: 'after' }
     );
 
-    if (result) {
-      if (result.count > max) {
-        return { allowed: false, remaining: 0, resetAt: result.resetAt };
-      }
-      return { allowed: true, remaining: max - result.count, resetAt: result.resetAt };
+    const count = result.count;
+    if (count > max) {
+      return { allowed: false, remaining: 0, resetAt: result.resetAt };
     }
 
-    await collections.rateLimits().updateOne(
-      { _id: key },
-      { $set: { count: 1, resetAt } },
-      { upsert: true }
-    );
-
-    return { allowed: true, remaining: max - 1, resetAt };
+    return { allowed: true, remaining: max - count, resetAt: result.resetAt };
   }
 }
 

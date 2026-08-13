@@ -61,8 +61,19 @@ describe('P10 MongoQueue', () => {
       expect(mockCollection.insertOne).toHaveBeenCalledTimes(1);
     });
 
-    it('should return existing job id when same jobId already exists', async () => {
+    it('should return existing job id on duplicate key error', async () => {
       const existingJob = { _id: new ObjectId(), type: 'test', payload: { jobId: 'test-job-1' }, status: 'pending' };
+      const newId = new ObjectId();
+
+      mockCollection.insertOne
+        .mockImplementationOnce((doc: any) => {
+          Object.assign(doc, { _id: newId, createdAt: new Date(), updatedAt: new Date() });
+          return { insertedId: newId };
+        })
+        .mockRejectedValueOnce({
+          code: 11000,
+          message: 'E11000 duplicate key error',
+        });
       mockCollection.findOne.mockResolvedValue(existingJob);
 
       const first = await queue.enqueue({
@@ -71,15 +82,19 @@ describe('P10 MongoQueue', () => {
         payload: { jobId: 'test-job-1' },
       });
 
-      mockCollection.insertOne.mockClear();
       const second = await queue.enqueue({
         version: 1,
         type: 'test',
         payload: { jobId: 'test-job-1' },
       });
 
-      expect(mockCollection.insertOne).not.toHaveBeenCalled();
-      expect(second).toBe(first);
+      expect(first).toBe(newId.toHexString());
+      expect(second).toBe(existingJob._id.toHexString());
+      expect(mockCollection.findOne).toHaveBeenCalledWith({
+        type: 'test',
+        'payload.jobId': 'test-job-1',
+        status: { $in: ['pending', 'processing'] },
+      });
     });
 
     it('should allow re-enqueue after job is completed', async () => {
@@ -106,7 +121,7 @@ describe('P10 MongoQueue', () => {
 
       expect(first).toBeDefined();
       expect(second).toBeDefined();
-      expect(mockCollection.insertOne).toHaveBeenCalledTimes(1);
+      expect(mockCollection.insertOne).toHaveBeenCalledTimes(2);
     });
   });
 

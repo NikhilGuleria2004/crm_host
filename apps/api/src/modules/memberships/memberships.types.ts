@@ -4,7 +4,7 @@ export interface OrganizationMembershipResponse {
   organizationId: string;
   roleId: string;
   teamIds: string[];
-  status: 'invited' | 'active' | 'suspended' | 'removed';
+  status: 'invited' | 'active' | 'suspended' | 'removed' | 'expired';
   joinedAt?: string;
   createdAt: string;
   updatedAt: string;
@@ -19,7 +19,7 @@ export interface CreateMembershipInput {
 export interface UpdateMembershipInput {
   roleId?: string;
   teamIds?: string[];
-  status?: 'invited' | 'active' | 'suspended' | 'removed';
+  status?: 'invited' | 'active' | 'suspended' | 'removed' | 'expired';
 }
 
 export interface AcceptInvitationInput {

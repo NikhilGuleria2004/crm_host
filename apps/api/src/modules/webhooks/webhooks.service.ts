@@ -2,6 +2,8 @@ import { randomBytes, createHmac } from 'crypto';
 import { WebhookRepository } from './webhooks.repository';
 import { createQueue } from '../../queue/factory';
 import { validateWebhookUrl } from '../../utils/ssrf';
+import { safeFetch } from '../../utils/http';
+import { logger } from '../../utils/logger';
 import type { WebhookResponse, WebhookCreateResponse, WebhookDeliveryResponse, CreateWebhookInput, UpdateWebhookInput } from './webhooks.types';
 import type { WebhookDocument } from '../../types/documents';
 
@@ -10,6 +12,11 @@ export class WebhookService {
 
   async create(organizationId: string, createdBy: string, input: CreateWebhookInput): Promise<WebhookCreateResponse> {
     await validateWebhookUrl(input.url);
+
+    const existing = await this.repository.findDuplicate(organizationId, input.url, input.events, input.status || 'active');
+    if (existing) {
+      return this.repository.toCreateResponse(existing, existing.secret);
+    }
 
     const secret = randomBytes(32).toString('hex');
     const doc = await this.repository.create({
@@ -65,7 +72,7 @@ export class WebhookService {
     return docs.map((doc) => this.repository.toDeliveryResponse(doc));
   }
 
-  async enqueueDelivery(webhookId: string, organizationId: string, eventType: string, payload: Record<string, unknown>): Promise<void> {
+  async enqueueDelivery(webhookId: string, organizationId: string, eventType: string, payload: Record<string, unknown>, requestId?: string): Promise<void> {
     const eventId = randomBytes(8).toString('hex');
     const jobId = `${webhookId}:${eventType}:${Date.now()}`;
 
@@ -79,6 +86,7 @@ export class WebhookService {
         eventType,
         eventId,
         payload,
+        requestId,
       },
     });
   }
@@ -89,6 +97,10 @@ export class WebhookService {
     const eventType = payload.eventType as string;
     const eventPayload = payload.payload as Record<string, unknown>;
     const eventId = payload.eventId as string;
+    const requestId = payload.requestId as string | undefined;
+    const jobId = payload.jobId as string;
+
+    logger.info({ jobId, eventId, requestId, webhookId, eventType }, 'Webhook delivery started');
 
     const webhook = await this.repository.findById(webhookId, organizationId);
     if (!webhook || webhook.status !== 'active') {
@@ -109,7 +121,7 @@ export class WebhookService {
 
     const start = Date.now();
     try {
-      const response = await fetch(webhook.url, {
+      const response = await safeFetch(webhook.url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -117,8 +129,7 @@ export class WebhookService {
           'X-Webhook-Signature': signature,
         },
         body: payloadString,
-        signal: AbortSignal.timeout(10000),
-      });
+      }, { timeoutMs: 10_000, maxBytes: 1 * 1024 * 1024 });
 
       const lastStatusCode = response.status;
       const lastResponseBody = await response.text();

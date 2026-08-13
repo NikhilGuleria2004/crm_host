@@ -67,7 +67,6 @@ crm/
 │   └── utils/
 │
 ├── infrastructure/
-│   ├── docker/
 │   ├── nginx/
 │   └── scripts/
 │
@@ -2146,25 +2145,19 @@ The application should refuse to start with invalid configuration.
 
 89. Docker
 
-Use separate production containers:
-
-crm-web
-crm-api
-crm-worker
-
-MongoDB can be:
-
-managed MongoDB
-
-for production.
+Docker is used only for local development. Production deployment uses Vercel.
 
 For local development:
 
+```text
 docker-compose
 ├── mongodb
 ├── api
 ├── worker
 └── web
+```
+
+Docker files remain in the repository for local development but are not used for production deployment.
 90. CI/CD
 
 Pipeline:

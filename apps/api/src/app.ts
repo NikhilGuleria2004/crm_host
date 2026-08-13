@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { requestId, securityHeaders, requestLogger, cors, errorHandler } from './middleware';
+import { requestId, securityHeaders, requestLogger, cors, errorHandler, requestSizeLimit } from './middleware';
 import { authenticate } from './middleware';
 import { organizationContext } from './middleware';
 import { rateLimiter } from './middleware';
@@ -39,6 +39,7 @@ app.use('*', requestId());
 app.use('*', requestLogger());
 app.use('*', securityHeaders());
 app.use('*', cors());
+app.use('*', requestSizeLimit());
 
 app.get('/health', (c) => c.json({ status: 'ok' }));
 

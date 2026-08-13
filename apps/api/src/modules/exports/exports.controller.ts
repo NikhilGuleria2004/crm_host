@@ -87,7 +87,7 @@ export function createExportsController(service: ExportService) {
           return c.json({ error: { code: 'FORBIDDEN', message: `Missing permission: ${requiredPermission}` } }, 403);
         }
 
-        const job = await service.createJob(organizationId, user.id, input.entity, input.fields, input.filters);
+        const job = await service.createJob(organizationId, user.id, input.entity, input.fields, input.filters, c.get('requestId'));
         return c.json({ data: job }, 201);
       } catch (error) {
         if (error instanceof Error) {

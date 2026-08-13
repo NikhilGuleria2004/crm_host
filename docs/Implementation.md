@@ -198,7 +198,7 @@ fully at Definition of Done (§9).
 | P41 | Observability | P39 | Structured logs, `requestId`, `/health`, `/ready` | `/ready` fails correctly when MongoDB is unreachable |
 | P42 | Backups & recovery | — | Backup schedule + a **tested** restore procedure | A restore has actually been executed once, not just documented |
 | P43 | Seed & demo data | M2–M5 complete | `pnpm db:seed` producing realistic org/users/contacts/deals per `SRS.md` seed spec | Demo accounts (`owner@example.test`, etc.) log in and see populated data |
-| P44 | Deployment | P39–P42 | Dockerized `web`/`api`/`worker`, env validation on boot, graceful shutdown | Container fails fast (not silently) on invalid/missing env vars |
+| P44 | Deployment | P39–P42 | Vercel deployment for `web`/`api`, env validation on boot, graceful shutdown | Vercel preview/production deployments work; `/ready` fails correctly when MongoDB is unreachable |
 | P45 | Final QA pass | All prior | Screen-by-screen checklist from `screen-spec.md` §86, run against every route | Every screen has loading/empty/error/permission-denied/mobile states verified |
 
 Gate reminder: **P11 (RBAC engine) must be green before P13 (Contacts) starts.**
@@ -415,7 +415,7 @@ Authorization tests           PASS
 Security scan                 PASS
 MongoDB indexes               VERIFIED
 Backups + restore test        VERIFIED
-Docker build + health check   PASS
+Vercel build + health check   PASS
 Production smoke test         PASS
 ```
 

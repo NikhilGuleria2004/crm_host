@@ -53,6 +53,7 @@ export class ExportRepository {
     filters: Record<string, unknown>;
     fields: string[];
     createdBy: string;
+    contentHash?: string;
   }): Promise<ExportJobDocument> {
     const now = new Date();
     const result = await collections.exportJobs().insertOne({
@@ -63,11 +64,23 @@ export class ExportRepository {
       status: 'pending',
       createdBy: new ObjectId(input.createdBy),
       createdAt: now,
+      contentHash: input.contentHash,
     } as any);
 
     const doc = await collections.exportJobs().findOne({ _id: result.insertedId });
     if (!doc) throw new Error('Failed to create export job');
     return doc as ExportJobDocument;
+  }
+
+  async findDuplicate(organizationId: string, contentHash: string, windowMs: number): Promise<ExportJobDocument | null> {
+    const cutoff = new Date(Date.now() - windowMs);
+    const doc = await collections.exportJobs().findOne({
+      organizationId: new ObjectId(organizationId),
+      contentHash,
+      status: { $in: ['pending', 'processing'] },
+      createdAt: { $gte: cutoff },
+    } as any);
+    return doc as ExportJobDocument | null;
   }
 
   async updateStatus(id: string, organizationId: string, updates: {

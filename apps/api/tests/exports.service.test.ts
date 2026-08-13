@@ -22,6 +22,7 @@ function createMockRepository(): vi.Mocked<ExportRepository> {
     list: vi.fn(),
     create: vi.fn(),
     updateStatus: vi.fn(),
+    findDuplicate: vi.fn().mockResolvedValue(null),
     toResponse: vi.fn(),
   } as any;
 }
@@ -118,11 +119,26 @@ describe('P27 ExportService', () => {
       };
       repository.create.mockResolvedValue(createdDoc);
       repository.findById.mockResolvedValue(createdDoc);
+      repository.findDuplicate.mockResolvedValue(null);
 
       const result = await service.createJob(orgId, userId, 'contacts', ['firstName', 'email'], {});
 
       expect(repository.create).toHaveBeenCalled();
       expect(result.status).toBe('pending');
+    });
+
+    it('should return existing job if duplicate request is made within dedup window', async () => {
+      const existingDoc = {
+        ...mockExportDoc,
+        status: 'processing' as const,
+        createdAt: new Date(),
+      };
+      repository.findDuplicate.mockResolvedValue(existingDoc);
+
+      const result = await service.createJob(orgId, userId, 'contacts', ['firstName', 'email'], {});
+
+      expect(repository.create).not.toHaveBeenCalled();
+      expect(result.status).toBe('processing');
     });
   });
 

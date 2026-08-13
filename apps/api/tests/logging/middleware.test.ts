@@ -28,6 +28,7 @@ describe('P12 Logging Middleware', () => {
 
     const res = await app.request('/test');
     expect(res.status).toBe(200);
+    expect(res.headers.get('X-Request-Id')).toBeTruthy();
 
     expect(logger.info).toHaveBeenCalledTimes(1);
     const logArgs = (logger.info as any).mock.calls[0];

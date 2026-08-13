@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: test
+      MONGODB_URI: mongodb://localhost:27017/crm_test
+      MONGODB_DATABASE: crm_test
+      SESSION_SECRET: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      CORS_ORIGIN: http://localhost:5173
+
+    services:
+      mongodb:
+        image: mongo:6.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.adminCommand(\"ping\")'" 
+          --health-interval 10s 
+          --health-timeout 5s 
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+      - name: Vercel build
+        run: pnpm --filter @crm/api vercel:build
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        continue-on-error: true
+
+      - name: Verify no forbidden artifacts in build
+        run: |
+          if [ -d "apps/api/dist" ]; then
+            if grep -r "mongodb://" apps/api/dist/ 2>/dev/null; then
+              echo "Error: Found hardcoded MongoDB connection strings in build output"
+              exit 1
+            fi
+            echo "Build artifacts check passed"
+          else
+            echo "Build output directory not found, skipping artifact check"
+          fi

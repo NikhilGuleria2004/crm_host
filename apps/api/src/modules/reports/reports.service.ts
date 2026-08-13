@@ -23,7 +23,7 @@ export class ReportsService {
     return this.repository.getActivityReport(organizationId, params);
   }
 
-  async createSalesExportJob(organizationId: string, userId: string, params: { from?: Date; to?: Date; ownerId?: string; pipelineId?: string }): Promise<ReportExportJobResponse> {
+  async createSalesExportJob(organizationId: string, userId: string, params: { from?: Date; to?: Date; ownerId?: string; pipelineId?: string }, requestId?: string): Promise<ReportExportJobResponse> {
     const doc = await collections.reportJobs().insertOne({
       _id: new ObjectId(),
       organizationId: new ObjectId(organizationId),
@@ -54,6 +54,7 @@ export class ReportsService {
           ownerId: params.ownerId,
           pipelineId: params.pipelineId,
         },
+        requestId,
       },
     });
 

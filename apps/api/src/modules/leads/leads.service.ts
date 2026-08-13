@@ -312,6 +312,7 @@ export class LeadService {
         type: 'lead.converted',
         entityType: 'lead',
         entityId: lead._id.toHexString(),
+        requestId: c.get('requestId'),
         payload: {
           leadId: lead._id.toHexString(),
           contactId: response.lead.convertedContactId,

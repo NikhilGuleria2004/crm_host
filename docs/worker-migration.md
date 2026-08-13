@@ -2,32 +2,31 @@
 
 ## Current Architecture
 
-The application uses a long-running worker process (`apps/api/src/worker/index.ts`) that polls the MongoDB `queue_jobs` collection for pending jobs and processes them in batches.
+The application uses Vercel Cron (`apps/api/src/queue/cron.ts`) to process jobs from the MongoDB `queue_jobs` collection. The cron runs every 5 minutes and processes jobs in batches.
 
 ### Current Flow
 1. Controllers/services enqueue jobs via `createQueue().enqueue(message)`
 2. Jobs are stored in MongoDB `queue_jobs` collection with status `pending`
-3. Worker process (`worker/index.ts`) runs in an infinite loop:
-   - Calls `queue.processAll(BATCH_SIZE)` to claim and process jobs
-   - Sleeps for `SLEEP_MS` between batches
-4. `cron.ts` exists as a Vercel Cron-compatible handler (same `processAll` logic)
+3. Vercel Cron (`cron.ts`) runs every 5 minutes:
+   - Calls `queue.processAll(10)` to claim and process jobs
+   - Runs `runCleanup()` to purge old failed jobs, expired invitations, and soft-deleted records
 
 ### Existing Job Types
 
-| Job Type | Consumer | Current Trigger | New Trigger | Retry Behavior | Idempotency |
-|----------|----------|-----------------|-------------|----------------|-------------|
-| `export` | `exportConsumer` | Worker poll | Vercel Cron / API trigger | 3 attempts, 5s backoff | `type + jobId` unique index |
-| `import` | `importConsumer` | Worker poll | Vercel Cron / API trigger | 3 attempts, 5s backoff | `type + jobId` unique index |
-| `webhook` | `createWebhookConsumer()` | Worker poll | Vercel Cron / API trigger | 3 attempts, 5s backoff | `type + jobId` unique index |
-| `outbox` | `outboxConsumer` | Worker poll | Vercel Cron / API trigger | 3 attempts, 5s backoff | `type + jobId` unique index |
-| `report` | `reportConsumer` | Worker poll | Vercel Cron / API trigger | 3 attempts, 5s backoff | `type + jobId` unique index |
+| Job Type | Consumer | Trigger | Retry Behavior | Idempotency |
+|----------|----------|---------|----------------|-------------|
+| `export` | `exportConsumer` | Vercel Cron / API trigger | 3 attempts, 5s backoff | `type + jobId` unique index |
+| `import` | `importConsumer` | Vercel Cron / API trigger | 3 attempts, 5s backoff | `type + jobId` unique index |
+| `webhook` | `createWebhookConsumer()` | Vercel Cron / API trigger | 3 attempts, 5s backoff | `type + jobId` unique index |
+| `outbox` | `outboxConsumer` | Vercel Cron / API trigger | 3 attempts, 5s backoff | `type + jobId` unique index |
+| `report` | `reportConsumer` | Vercel Cron / API trigger | 3 attempts, 5s backoff | `type + jobId` unique index |
 
 ## Migration Strategy
 
 ### Phase 1: Preserve Existing Worker (Current State)
-- Keep `apps/api/src/worker/index.ts` intact
-- Continue using `MongoQueue` for local development and Docker
-- `cron.ts` already provides Vercel-compatible entry point
+- `apps/api/src/worker/index.ts` has been removed
+- Continue using `MongoQueue` for local development and Vercel
+- `cron.ts` provides Vercel-compatible entry point
 
 ### Phase 2: Vercel Cron Integration
 1. **Deploy `cron.ts` as Vercel Cron Job**
@@ -70,9 +69,36 @@ For high-priority job types, consider:
 | `outbox` | Medium | Vercel Cron | Consider event-driven in future |
 | `report` | Low | Vercel Cron | Already works via queue abstraction |
 
-## Action Items
-- [ ] Configure `vercel.json` cron schedule for `apps/api/src/queue/cron.ts`
-- [ ] Monitor queue depth in production
-- [ ] Adjust `BATCH_SIZE` and `SLEEP_MS` based on load
-- [ ] Add alerting for failed jobs
-- [ ] Do NOT delete `worker/index.ts` until Cron proven stable in production
+## Phase 27 — Scheduled Jobs
+
+The worker currently only polls `queue_jobs` for pending jobs. It does **not** periodically check outbox events, expired sessions, cleanup, or scheduled work.
+
+### Mapping
+
+| Concern | Current Handling | Scheduled Job Mapping | Notes |
+|---------|-----------------|----------------------|-------|
+| Queue jobs (export, import, webhook, outbox, report) | Worker poll / Vercel Cron | **Vercel Cron** (`/api/cron/queue` every 5 min) → **Function** (`cron.ts`) → **Queue** (`processAll`) | Already implemented |
+| Expired sessions | MongoDB TTL index on `sessions.expiresAt` | No application cron needed | MongoDB automatically removes expired sessions |
+| Expired password reset tokens | MongoDB TTL index on `password_reset_tokens.expiresAt` | No application cron needed | MongoDB automatically removes expired tokens |
+| Rate limit resets | MongoDB TTL index on `rate_limits.resetAt` | No application cron needed | MongoDB automatically removes stale rate limits |
+| Old files | MongoDB TTL index on `files.updatedAt` | No application cron needed | MongoDB automatically removes old files |
+| Outbox events | Queue + `outboxConsumer` | **Vercel Cron** → **Function** (`cron.ts`) → **Queue** (`outboxConsumer`) | Already implemented |
+| Failed queue jobs | None | **Vercel Cron** → **Function** (`cron.ts`) direct cleanup | Delete jobs with `status: 'failed'` older than 7 days |
+| Expired invitations | None | **Vercel Cron** → **Function** (`cron.ts`) direct cleanup | Mark `status: 'invited'` older than 7 days as `status: 'expired'` |
+| Old soft-deleted records | None | **Vercel Cron** → **Function** (`cron.ts`) batched cleanup | Hard-delete contacts, companies, leads, deals, notes with `deletedAt` older than 90 days, 10 orgs per run |
+
+### Implementation
+
+- `apps/api/src/queue/cron.ts` — Added `runCleanup()` function executed before `queue.processAll()` on every cron invocation
+- Cleanup operations are bounded and lightweight:
+  - Single `deleteMany` for failed queue jobs
+  - Single `updateMany` for expired invitations
+  - `countDocuments` + `deleteMany` per entity type, capped at 10 organizations per run for soft-delete purging
+
+### Action Items
+- [x] Document scheduled job mapping in `docs/worker-migration.md`
+- [x] Add cleanup logic to `cron.ts` (Vercel Cron path)
+- [x] Add tests for cleanup in `tests/queue/cron.test.ts`
+- [x] Remove `apps/api/src/worker/index.ts` after verifying cron handles all responsibilities
+- [ ] Monitor cleanup metrics in production (failedJobs, expiredInvitations, purgedOrgs)
+- [ ] Adjust retention periods (`CLEANUP_FAILED_JOB_RETENTION_DAYS`, `CLEANUP_INVITATION_RETENTION_DAYS`, `CLEANUP_SOFT_DELETE_RETENTION_DAYS`) based on operational requirements

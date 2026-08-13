@@ -38,7 +38,7 @@ export class ImportService {
     return this.repository.toResponse(doc);
   }
 
-  async createJob(organizationId: string, userId: string, entity: string, file: { name: string; content: Buffer }): Promise<ImportJobResponse> {
+  async createJob(organizationId: string, userId: string, entity: string, file: { name: string; content: Buffer }, requestId?: string): Promise<ImportJobResponse> {
     if (file.content.length > MAX_FILE_SIZE) {
       throw new Error(`File size exceeds maximum allowed size of ${MAX_FILE_SIZE / 1024 / 1024} MB`);
     }
@@ -74,6 +74,7 @@ export class ImportService {
         entity,
         fileKey,
         totalRows,
+        requestId,
       },
     });
 
@@ -113,7 +114,7 @@ export class ImportService {
     };
   }
 
-  async startImport(jobId: string, organizationId: string, mapping: Record<string, string>): Promise<void> {
+  async startImport(jobId: string, organizationId: string, mapping: Record<string, string>, requestId?: string): Promise<void> {
     const job = await this.repository.findById(jobId, organizationId);
     if (!job) {
       throw new Error('Import job not found');
@@ -141,6 +142,7 @@ export class ImportService {
         fileKey: job.fileKey,
         totalRows: job.totalRows,
         mapping,
+        requestId,
       },
     });
   }

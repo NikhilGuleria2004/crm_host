@@ -413,6 +413,7 @@ export interface ExportJobDocument {
   createdBy: ObjectId;
   createdAt: Date;
   completedAt?: Date;
+  contentHash?: string;
 }
 
 export interface ApiKeyDocument {
@@ -485,7 +486,7 @@ export interface OrganizationMembershipDocument {
   organizationId: ObjectId;
   roleId: ObjectId;
   teamIds: ObjectId[];
-  status: 'invited' | 'active' | 'suspended' | 'removed';
+  status: 'invited' | 'active' | 'suspended' | 'removed' | 'expired';
   invitationToken?: string;
   joinedAt?: Date;
   createdAt: Date;

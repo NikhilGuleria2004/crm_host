@@ -45,6 +45,16 @@ export class WebhookRepository {
     return docs as WebhookDocument[];
   }
 
+  async findDuplicate(organizationId: string, url: string, events: string[], status: 'active' | 'inactive'): Promise<WebhookDocument | null> {
+    const doc = await collections.webhooks().findOne({
+      organizationId: new ObjectId(organizationId),
+      url,
+      events,
+      status,
+    });
+    return (doc as WebhookDocument | null) ?? null;
+  }
+
   async findByOrganizationPaginated(organizationId: string, params: { limit: number; cursor?: string }): Promise<{ data: WebhookDocument[]; nextCursor: string | null; hasMore: boolean }> {
     const query: Record<string, unknown> = { organizationId: new ObjectId(organizationId) };
 

@@ -17,7 +17,7 @@ importers:
         specifier: ^1.13.7
         version: 1.19.17(hono@4.6.10)
       '@vercel/blob':
-        specifier: ^1.0.0
+        specifier: ^1.1.1
         version: 1.1.1
       argon2:
         specifier: ^0.40.3
